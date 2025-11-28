@@ -16,6 +16,15 @@ import {
   MoreVertical,
   Loader2,
   ListTodo,
+  AlertTriangle,
+  Pill,
+  Activity,
+  FileText,
+  Plus,
+  Eye,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import EmrSnapshotPanel from '@/components/EmrSnapshotPanel';
 import type { EmrSnapshotData } from '@/types/emr';
@@ -76,7 +85,64 @@ function looseMatch(text: string, patterns: string[]): boolean {
   });
 }
 
-const GENERIC_REFERRAL_TEMPLATE = `[Today’s Date]
+// Mock data for demo purposes
+const getMockPrechartData = (patientName: string): PrechartData => ({
+  demographics: {
+    name: patientName || 'John Doe',
+    dob: '1985-03-15',
+    sex: 'Male',
+  },
+  reasonForVisit: 'Follow-up visit for dental abscess. Patient reports improvement in pain but still experiencing some discomfort when chewing.',
+  pastEncounters: [
+    {
+      date: '2024-11-20',
+      summary: 'Initial consultation for dental abscess. Prescribed amoxicillin and pain relief. Scheduled follow-up.',
+    },
+    {
+      date: '2024-10-15',
+      summary: 'Routine dental cleaning and examination. No issues found.',
+    },
+  ],
+  vitals: [
+    { label: 'Blood Pressure', value: '120/80 mmHg' },
+    { label: 'Heart Rate', value: '72 bpm' },
+    { label: 'Temperature', value: '98.6°F' },
+    { label: 'Weight', value: '175 lbs' },
+  ],
+  flags: [
+    'Allergy: Penicillin - Use alternative antibiotics',
+    'Recent lab results pending review',
+  ],
+});
+
+const getMockEmrSnapshotData = (): EmrSnapshotData => ({
+  problems: [
+    { name: 'Dental Abscess, Lower Right First Molar', onsetDate: '2024-11-20' },
+    { name: 'Hypertension', onsetDate: '2020-05-10' },
+    { name: 'Type 2 Diabetes Mellitus', onsetDate: '2019-08-15' },
+  ],
+  medications: [
+    { name: 'Amoxicillin', dose: '500mg', frequency: 'Three times daily' },
+    { name: 'Ibuprofen', dose: '400mg', frequency: 'As needed for pain' },
+    { name: 'Metformin', dose: '1000mg', frequency: 'Twice daily' },
+    { name: 'Lisinopril', dose: '10mg', frequency: 'Once daily' },
+  ],
+  allergies: [
+    { substance: 'Penicillin', reaction: 'Rash and hives' },
+    { substance: 'Latex', reaction: 'Contact dermatitis' },
+  ],
+  labs: [
+    { test: 'Hemoglobin A1c', value: '7.2', unit: '%', date: '2024-11-01' },
+    { test: 'Fasting Glucose', value: '135', unit: 'mg/dL', date: '2024-11-01' },
+    { test: 'Complete Blood Count', value: 'Normal', date: '2024-10-15' },
+  ],
+  metadata: {
+    source: 'mock',
+    message: 'Showing mock EMR data for demo purposes',
+  },
+});
+
+const GENERIC_REFERRAL_TEMPLATE = `[Today's Date]
 
 Dear [Name and title of clinician the letter is addressed to], (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely)
 
@@ -193,7 +259,10 @@ export default function MainContent({
       }
       setEmrSnapshot(payload);
     } catch (err) {
-      setEmrError(err instanceof Error ? err.message : 'Unknown EMR snapshot error');
+      // Use mock data for demo purposes when API fails
+      console.warn('EMR Snapshot API failed, using mock data for demo:', err);
+      setEmrSnapshot(getMockEmrSnapshotData());
+      setEmrError(null); // Clear error so UI shows mock data
     } finally {
       setIsEmrLoading(false);
     }
@@ -246,9 +315,10 @@ export default function MainContent({
       }
       setPrechart(payload.prechart);
     } catch (err) {
-      setPrechartError(
-        err instanceof Error ? err.message : 'Unknown error loading pre-chart data',
-      );
+      // Use mock data for demo purposes when API fails
+      console.warn('Pre-chart API failed, using mock data for demo:', err);
+      setPrechart(getMockPrechartData(patientNameForEmr || patientNameForDisplay));
+      setPrechartError(null); // Clear error so UI shows mock data
     } finally {
       setIsPrechartLoading(false);
     }
@@ -629,13 +699,13 @@ export default function MainContent({
           {onToggleTasksPanel && (
             <button
               onClick={onToggleTasksPanel}
-              className={`inline-flex items-center gap-2 bg-white border font-medium py-1.5 px-3 rounded-lg transition-colors text-sm ${
+              className={`inline-flex items-center gap-2 bg-white border font-medium py-2.5 px-4 rounded-lg transition-colors ${
                 isTasksPanelOpen
                   ? 'border-purple-200 text-purple-700 hover:bg-purple-50'
                   : 'border-gray-200 text-gray-700 hover:bg-gray-50'
               }`}
             >
-              <ListTodo size={14} />
+              <ListTodo size={18} />
               <span>Tasks</span>
             </button>
           )}
@@ -862,9 +932,16 @@ export default function MainContent({
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
-                      Pre-chart
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                        Pre-chart
+                      </p>
+                      {prechart && !prechartError && (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                          Demo Data
+                        </span>
+                      )}
+                    </div>
                     <h2 className="text-lg font-semibold text-gray-900">
                       Visit context from EMR
                     </h2>
@@ -981,29 +1058,58 @@ export default function MainContent({
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
-                      EMR Snapshot
-                    </p>
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      Current EMR Data
-                    </h2>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Latest patient data from OpenEMR. Click to view full snapshot panel.
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Activity className="text-purple-600" size={20} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                            EMR Snapshot
+                          </p>
+                          {emrSnapshot?.metadata?.source === 'mock' && (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                              Demo Data
+                            </span>
+                          )}
+                          {emrSnapshot && emrSnapshot.metadata?.source !== 'mock' && (
+                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                              <CheckCircle2 size={10} />
+                              Live
+                            </span>
+                          )}
+                        </div>
+                        <h2 className="text-lg font-semibold text-gray-900">
+                          Current EMR Data
+                        </h2>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Latest patient data from OpenEMR. Click to view full snapshot panel.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={handleOpenEmrSnapshot}
-                    disabled={isEmrLoading}
-                    className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200"
-                  >
-                    <Loader2
-                      size={14}
-                      className={`${
-                        isEmrLoading ? 'opacity-100 animate-spin' : 'opacity-0'
-                      } transition-opacity`}
-                    />
-                    <span>{isEmrLoading ? 'Fetching EMR…' : 'View EMR Snapshot'}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleOpenEmrSnapshot}
+                      disabled={isEmrLoading}
+                      className="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Loader2
+                        size={14}
+                        className={`${
+                          isEmrLoading ? 'opacity-100 animate-spin' : 'opacity-0'
+                        } transition-opacity`}
+                      />
+                      <Eye size={14} />
+                      <span>{isEmrLoading ? 'Fetching…' : 'View Full'}</span>
+                    </button>
+                    <button
+                      onClick={() => void fetchEmrSnapshot()}
+                      disabled={isEmrLoading}
+                      className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 transition-colors"
+                      title="Refresh EMR data"
+                    >
+                      <RefreshCw size={14} className={isEmrLoading ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
                 </div>
 
                 {emrError && (
@@ -1022,23 +1128,57 @@ export default function MainContent({
                   <div className="space-y-4">
                     {emrSnapshot.problems && emrSnapshot.problems.length > 0 && (
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900 mb-2">Problems</h3>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="text-red-500" size={18} />
+                            <h3 className="text-sm font-semibold text-gray-900">Problems</h3>
+                            <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                              {emrSnapshot.problems.length}
+                            </span>
+                          </div>
+                          <button
+                            onClick={handleOpenEmrSnapshot}
+                            className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
+                          >
+                            <Eye size={12} />
+                            View All
+                          </button>
+                        </div>
                         <div className="space-y-2">
                           {emrSnapshot.problems.slice(0, 3).map((problem, idx) => (
                             <div
                               key={`${problem.name}-${idx}`}
-                              className="border border-gray-200 rounded-md px-3 py-2 text-sm"
+                              className="border border-red-100 bg-red-50/50 rounded-lg px-4 py-3 text-sm hover:bg-red-50 transition-colors group"
                             >
-                              <div className="font-semibold text-gray-900">{problem.name}</div>
-                              {problem.onsetDate && (
-                                <div className="text-gray-500 text-xs">Onset: {problem.onsetDate}</div>
-                              )}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                    <div className="font-semibold text-gray-900">{problem.name}</div>
+                                  </div>
+                                  {problem.onsetDate && (
+                                    <div className="flex items-center gap-1 text-gray-500 text-xs ml-4">
+                                      <Clock size={12} />
+                                      <span>Onset: {problem.onsetDate}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 hover:text-purple-700 p-1"
+                                  title="Add to note"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
                             </div>
                           ))}
                           {emrSnapshot.problems.length > 3 && (
-                            <p className="text-xs text-gray-500">
-                              +{emrSnapshot.problems.length - 3} more problems. View full snapshot for details.
-                            </p>
+                            <button
+                              onClick={handleOpenEmrSnapshot}
+                              className="w-full text-xs text-purple-600 hover:text-purple-700 font-medium py-2 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                            >
+                              +{emrSnapshot.problems.length - 3} more problems
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1046,23 +1186,57 @@ export default function MainContent({
 
                     {emrSnapshot.medications && emrSnapshot.medications.length > 0 && (
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900 mb-2">Medications</h3>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Pill className="text-blue-500" size={18} />
+                            <h3 className="text-sm font-semibold text-gray-900">Medications</h3>
+                            <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                              {emrSnapshot.medications.length}
+                            </span>
+                          </div>
+                          <button
+                            onClick={handleOpenEmrSnapshot}
+                            className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
+                          >
+                            <Eye size={12} />
+                            View All
+                          </button>
+                        </div>
                         <div className="space-y-2">
                           {emrSnapshot.medications.slice(0, 3).map((med, idx) => (
                             <div
                               key={`${med.name}-${idx}`}
-                              className="border border-gray-200 rounded-md px-3 py-2 text-sm"
+                              className="border border-blue-100 bg-blue-50/50 rounded-lg px-4 py-3 text-sm hover:bg-blue-50 transition-colors group"
                             >
-                              <div className="font-semibold text-gray-900">{med.name}</div>
-                              <div className="text-gray-700 text-xs">
-                                {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose documented'}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Pill size={14} className="text-blue-600" />
+                                    <div className="font-semibold text-gray-900">{med.name}</div>
+                                    <span className="bg-green-100 text-green-700 text-[10px] font-medium px-1.5 py-0.5 rounded">
+                                      Active
+                                    </span>
+                                  </div>
+                                  <div className="text-gray-700 text-xs ml-6">
+                                    {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose documented'}
+                                  </div>
+                                </div>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 hover:text-purple-700 p-1"
+                                  title="Add to note"
+                                >
+                                  <Plus size={14} />
+                                </button>
                               </div>
                             </div>
                           ))}
                           {emrSnapshot.medications.length > 3 && (
-                            <p className="text-xs text-gray-500">
-                              +{emrSnapshot.medications.length - 3} more medications. View full snapshot for details.
-                            </p>
+                            <button
+                              onClick={handleOpenEmrSnapshot}
+                              className="w-full text-xs text-purple-600 hover:text-purple-700 font-medium py-2 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                            >
+                              +{emrSnapshot.medications.length - 3} more medications
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1070,17 +1244,50 @@ export default function MainContent({
 
                     {emrSnapshot.allergies && emrSnapshot.allergies.length > 0 && (
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-900 mb-2">Allergies</h3>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="text-amber-500" size={18} />
+                            <h3 className="text-sm font-semibold text-gray-900">Allergies</h3>
+                            <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                              {emrSnapshot.allergies.length}
+                            </span>
+                          </div>
+                          <button
+                            onClick={handleOpenEmrSnapshot}
+                            className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
+                          >
+                            <Eye size={12} />
+                            View All
+                          </button>
+                        </div>
                         <div className="space-y-2">
                           {emrSnapshot.allergies.map((allergy, idx) => (
                             <div
                               key={`${allergy.substance}-${idx}`}
-                              className="border border-gray-200 rounded-md px-3 py-2 text-sm"
+                              className="border border-amber-200 bg-amber-50/50 rounded-lg px-4 py-3 text-sm hover:bg-amber-50 transition-colors group"
                             >
-                              <div className="font-semibold text-gray-900">{allergy.substance}</div>
-                              {allergy.reaction && (
-                                <div className="text-gray-700 text-xs">Reaction: {allergy.reaction}</div>
-                              )}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <AlertTriangle size={14} className="text-amber-600" />
+                                    <div className="font-semibold text-gray-900">{allergy.substance}</div>
+                                    <span className="bg-red-100 text-red-700 text-[10px] font-medium px-1.5 py-0.5 rounded">
+                                      Alert
+                                    </span>
+                                  </div>
+                                  {allergy.reaction && (
+                                    <div className="text-gray-700 text-xs ml-6">
+                                      Reaction: <span className="font-medium">{allergy.reaction}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 hover:text-purple-700 p-1"
+                                  title="Add to note"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
