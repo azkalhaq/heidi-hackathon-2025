@@ -55,3 +55,24 @@ The frontend talks to `/api/heidi/*` route handlers, which in turn:
 - Fetch detailed consult notes and transcriptions for a selected session.
 
 Make sure to restart the dev server after setting your environment variables so the routes can read them.
+
+## LLM Integration for Referral Generation
+
+The referral composer feature uses OpenAI's API to generate referral letters from consult notes. To enable this feature:
+
+1. Add your OpenAI API key to `.env.local`:
+```
+OPENAI_API_KEY=sk-your-api-key-here
+```
+
+2. Optionally, specify which OpenAI model to use (defaults to `gpt-4o-mini`):
+```
+OPENAI_MODEL=gpt-4o-mini
+```
+
+When a user triggers a referral via voice command ("start referral"), the system will:
+- Extract information from the current consult note
+- Use the LLM to fill in the generic referral template
+- Display the generated letter with a typing animation
+
+If the API key is not configured, the system will fall back to showing the empty template.

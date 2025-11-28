@@ -34,7 +34,12 @@ export default function EmrSnapshotPanel({
       }`}
     >
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900">EMR Snapshot</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">EMR Snapshot</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Fetched from OpenEMR via desktop RPA
+          </p>
+        </div>
         <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-900">
           Close
         </button>
@@ -54,19 +59,31 @@ export default function EmrSnapshotPanel({
             {error}
           </div>
         )}
+        {data?.metadata?.source === 'mock' && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            {data.metadata.message ??
+              'Showing mock EMR data because the automation service is unavailable.'}
+          </div>
+        )}
 
-        {renderListSection('Problems', data?.problems)}
-        {renderListSection('Medications', data?.medications)}
-        {renderListSection('Allergies', data?.allergies)}
+        {renderProblemsSection(data)}
+        {renderMedicationsSection(data)}
+        {renderAllergiesSection(data)}
 
         <div>
           <h3 className="font-medium text-gray-900 mb-2">Recent Labs</h3>
           {data?.labs?.length ? (
             <div className="space-y-2">
-              {data.labs.map((lab) => (
-                <div key={`${lab.name}-${lab.date ?? lab.value}`} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                  <div className="font-semibold">{lab.name}</div>
-                  <div>{lab.value}</div>
+              {data.labs.map((lab, idx) => (
+                <div
+                  key={`${lab.test}-${lab.date ?? lab.value ?? idx}`}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                >
+                  <div className="font-semibold">{lab.test}</div>
+                  <div>
+                    {lab.value}
+                    {lab.unit ? ` ${lab.unit}` : ''}
+                  </div>
                   {lab.date && <div className="text-gray-500">{lab.date}</div>}
                 </div>
               ))}
@@ -90,20 +107,76 @@ export default function EmrSnapshotPanel({
   );
 }
 
-function renderListSection(title: string, items?: string[]) {
+function renderProblemsSection(data: EmrSnapshotData | null) {
   return (
     <div>
-      <h3 className="font-medium text-gray-900 mb-2">{title}</h3>
-      {items?.length ? (
+      <h3 className="font-medium text-gray-900 mb-2">Problems</h3>
+      {data?.problems?.length ? (
         <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item} className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              {item}
+          {data.problems.map((problem, idx) => (
+            <li
+              key={`${problem.name}-${problem.onsetDate ?? idx}`}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <div className="font-semibold">{problem.name}</div>
+              {problem.onsetDate && (
+                <div className="text-gray-500">Onset: {problem.onsetDate}</div>
+              )}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-gray-500">No data captured yet.</p>
+        <p className="text-sm text-gray-500">No problems found.</p>
+      )}
+    </div>
+  );
+}
+
+function renderMedicationsSection(data: EmrSnapshotData | null) {
+  return (
+    <div>
+      <h3 className="font-medium text-gray-900 mb-2">Medications</h3>
+      {data?.medications?.length ? (
+        <ul className="space-y-2">
+          {data.medications.map((med, idx) => (
+            <li
+              key={`${med.name}-${med.dose ?? idx}`}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <div className="font-semibold">{med.name}</div>
+              <div className="text-gray-700">
+                {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose documented'}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-gray-500">No medications found.</p>
+      )}
+    </div>
+  );
+}
+
+function renderAllergiesSection(data: EmrSnapshotData | null) {
+  return (
+    <div>
+      <h3 className="font-medium text-gray-900 mb-2">Allergies</h3>
+      {data?.allergies?.length ? (
+        <ul className="space-y-2">
+          {data.allergies.map((allergy, idx) => (
+            <li
+              key={`${allergy.substance}-${allergy.reaction ?? idx}`}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <div className="font-semibold">{allergy.substance}</div>
+              {allergy.reaction && (
+                <div className="text-gray-700">Reaction: {allergy.reaction}</div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-gray-500">No allergies found.</p>
       )}
     </div>
   );
@@ -111,23 +184,57 @@ function renderListSection(title: string, items?: string[]) {
 
 function buildClipboardSummary(data: EmrSnapshotData | null) {
   if (!data) return '';
-  const lines = [
+  const lines: string[] = [
     'EMR Snapshot Summary',
     '--------------------',
     'Problems:',
-    ...(data.problems.length ? data.problems.map((p) => `- ${p}`) : ['- None documented']),
-    '',
-    'Medications:',
-    ...(data.medications.length ? data.medications.map((m) => `- ${m}`) : ['- None documented']),
-    '',
-    'Allergies:',
-    ...(data.allergies.length ? data.allergies.map((a) => `- ${a}`) : ['- None documented']),
-    '',
-    'Recent Labs:',
-    ...(data.labs.length
-      ? data.labs.map((lab) => `- ${lab.name}: ${lab.value}${lab.date ? ` (${lab.date})` : ''}`)
-      : ['- None documented']),
   ];
+
+  if (data.problems.length) {
+    lines.push(
+      ...data.problems.map((p) =>
+        p.onsetDate ? `- ${p.name} (${p.onsetDate})` : `- ${p.name}`,
+      ),
+    );
+  } else {
+    lines.push('- None documented');
+  }
+
+  lines.push('', 'Medications:');
+  if (data.medications.length) {
+    lines.push(
+      ...data.medications.map((m) => {
+        const details = [m.dose, m.frequency].filter(Boolean).join(' ');
+        return details ? `- ${m.name} ${details}` : `- ${m.name}`;
+      }),
+    );
+  } else {
+    lines.push('- None documented');
+  }
+
+  lines.push('', 'Allergies:');
+  if (data.allergies.length) {
+    lines.push(
+      ...data.allergies.map((a) =>
+        a.reaction ? `- ${a.substance} – ${a.reaction}` : `- ${a.substance}`,
+      ),
+    );
+  } else {
+    lines.push('- None documented');
+  }
+
+  lines.push('', 'Recent Labs:');
+  if (data.labs.length) {
+    lines.push(
+      ...data.labs.map((lab) => {
+        const base = `- ${lab.test}: ${lab.value}${lab.unit ? ` ${lab.unit}` : ''}`;
+        return lab.date ? `${base} (${lab.date})` : base;
+      }),
+    );
+  } else {
+    lines.push('- None documented');
+  }
+
   return lines.join('\n');
 }
 
