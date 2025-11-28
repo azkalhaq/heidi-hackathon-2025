@@ -15,8 +15,10 @@ import {
   Redo2,
   MoreVertical,
   Loader2,
+  CheckSquare,
 } from 'lucide-react';
 import EmrSnapshotPanel from '@/components/EmrSnapshotPanel';
+import TasksPanel from '@/components/TasksPanel';
 import type { EmrSnapshotData } from '@/types/emr';
 import type { PrechartData } from '@/types/prechart';
 
@@ -114,12 +116,17 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
   const [voiceLog, setVoiceLog] = useState<
     { id: string; title: string; description: string; timestamp: string }[]
   >([]);
+  const [tasks, setTasks] = useState<
+    { id: string; text: string; completed: boolean; timestamp?: string }[]
+  >([]);
+  const [isTasksPanelOpen, setIsTasksPanelOpen] = useState(true);
   const [activeTemplate, setActiveTemplate] = useState<string>('Goldilocks');
   const [referralDraft, setReferralDraft] = useState<ReferralDraft | null>(null);
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false);
   const [referralGenerationError, setReferralGenerationError] = useState<string | null>(null);
   const [showVoiceCommands, setShowVoiceCommands] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
+  const [activeTab, setActiveTab] = useState<'context' | 'transcript' | 'note'>('note');
 
   const noteContent =
     sessionDetails?.noteResult ?? 'No consult note is available yet.';
@@ -302,15 +309,33 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
       setVoiceError(null);
 
       const pushVoiceLog = (title: string, description: string) => {
+        const timestamp = new Date().toLocaleTimeString();
+        const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         setVoiceLog((prev) => [
           {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            id,
             title,
             description,
-            timestamp: new Date().toLocaleTimeString(),
+            timestamp,
           },
           ...prev.slice(0, 4),
         ]);
+        // Auto-generate task from voice activity
+        setTasks((prev) => {
+          // Check if task already exists for this activity
+          const taskText = description || title;
+          const existingTask = prev.find((t) => t.text === taskText);
+          if (existingTask) return prev;
+          return [
+            {
+              id: `task-${id}`,
+              text: taskText,
+              completed: false,
+              timestamp,
+            },
+            ...prev,
+          ];
+        });
       };
 
       const lc = text.toLowerCase();
@@ -498,9 +523,33 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
   const transcriptContent =
     transcription ?? 'No transcription has been generated for this session.';
 
+  const handleToggleTask = (id: string) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === id ? { ...task, completed: !task.completed } : task,
+      ),
+    );
+  };
+
+  const handleAddTask = () => {
+    const text = prompt('Enter new task:');
+    if (text?.trim()) {
+      setTasks((prev) => [
+        {
+          id: `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          text: text.trim(),
+          completed: false,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+        ...prev,
+      ]);
+    }
+  };
+
   return (
     <>
-      <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
+      <div className="flex-1 flex bg-gray-50 h-screen overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       {isVoiceActive && (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center mt-4">
           <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-white/90 px-4 py-2 shadow-lg border border-purple-200">
@@ -625,6 +674,19 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <button
               type="button"
+              onClick={() => setIsTasksPanelOpen(!isTasksPanelOpen)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 transition-colors ${
+                isTasksPanelOpen
+                  ? 'border-purple-400 bg-purple-50 text-purple-700'
+                  : 'border-gray-200 bg-gray-50 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700'
+              }`}
+              title={isTasksPanelOpen ? 'Hide Tasks' : 'Show Tasks'}
+            >
+              <CheckSquare size={12} />
+              <span>Tasks</span>
+            </button>
+            <button
+              type="button"
               onClick={startVoiceRecognition}
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 transition-colors ${
                 isVoiceActive
@@ -689,13 +751,34 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
         {/* Tabs */}
         <div className="px-6 flex items-center justify-between border-t border-gray-200">
           <div className="flex items-center gap-6">
-            <button className="py-3 text-gray-600 hover:text-gray-900 transition-colors">
-              Context
+            <button
+              onClick={() => setActiveTab('context')}
+              className={`py-3 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'context'
+                  ? 'text-blue-600 border-b-2 border-blue-600 font-medium'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <span>Context</span>
             </button>
-            <button className="py-3 text-gray-600 hover:text-gray-900 transition-colors">
+            <button
+              onClick={() => setActiveTab('transcript')}
+              className={`py-3 transition-colors ${
+                activeTab === 'transcript'
+                  ? 'text-blue-600 border-b-2 border-blue-600 font-medium'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
               Transcript
             </button>
-            <button className="py-3 text-blue-600 border-b-2 border-blue-600 font-medium flex items-center gap-1.5">
+            <button
+              onClick={() => setActiveTab('note')}
+              className={`py-3 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'note'
+                  ? 'text-blue-600 border-b-2 border-blue-600 font-medium'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
               <Pencil size={14} />
               <span>Note</span>
             </button>
@@ -769,48 +852,17 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
             <div className="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-2 rounded-lg text-xs flex items-center justify-between">
               <span>
                 Last voice command:&nbsp;
-                <span className="font-mono">“{lastVoiceCommand}”</span>
+                <span className="font-mono">&quot;{lastVoiceCommand}&quot;</span>
               </span>
               <span className="text-[10px] uppercase tracking-wide">
                 Parsed & routed
               </span>
             </div>
           )}
-          {voiceLog.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
-                    Voice workflow activity
-                  </p>
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Automated actions
-                  </h2>
-                </div>
-                <button
-                  className="text-xs text-gray-500 hover:text-gray-800"
-                  onClick={() => setVoiceLog([])}
-                >
-                  Clear
-                </button>
-              </div>
-              <ul className="space-y-3">
-                {voiceLog.map((entry) => (
-                  <li key={entry.id} className="border border-gray-200 rounded-md px-3 py-2">
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                      <span>{entry.timestamp}</span>
-                      <span>Voice agent</span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-900">{entry.title}</p>
-                    <p className="text-sm text-gray-700">{entry.description}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
-          {/* Pre-charting card */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          {/* Context Tab - Pre-charting */}
+          {activeTab === 'context' && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
@@ -921,58 +973,99 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
                   )}
               </div>
             ) : (
-              <p className="text-xs text-gray-500">
-                No pre-chart data loaded yet. Click &quot;Pre-chart from EMR&quot; to pull
-                context from OpenEMR.
-              </p>
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-500 mb-4">
+                  No pre-chart data loaded yet.
+                </p>
+                <button
+                  onClick={fetchPrechart}
+                  disabled={isPrechartLoading}
+                  className="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-medium py-2.5 px-4 rounded-lg text-sm disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isPrechartLoading && <Loader2 size={16} className="animate-spin" />}
+                  <span>{isPrechartLoading ? 'Pre-charting from EMR…' : 'Pre-chart from EMR'}</span>
+                </button>
+                <p className="text-xs text-gray-400 mt-3">
+                  Pulls visit context, demographics, recent encounters, vitals, and alerts from OpenEMR
+                </p>
+              </div>
             )}
           </div>
+          )}
 
-          {isLoading ? (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <div className="animate-pulse space-y-4">
-                <div className="h-6 bg-gray-200 rounded w-1/3" />
-                <div className="h-4 bg-gray-200 rounded w-full" />
-                <div className="h-4 bg-gray-200 rounded w-5/6" />
-                <div className="h-4 bg-gray-200 rounded w-2/3" />
-              </div>
-            </div>
-          ) : (
+          {/* Transcript Tab */}
+          {activeTab === 'transcript' && (
             <>
-              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <p className="text-sm text-gray-500">
-                      {sessionDetails?.consultNoteStatus ?? 'UNKNOWN'}
-                    </p>
-                    <h2 className="text-xl font-semibold text-gray-900">
-                      {sessionDetails?.heading ?? 'Consult Note'}
-                    </h2>
+              {isLoading ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-6 bg-gray-200 rounded w-1/3" />
+                    <div className="h-4 bg-gray-200 rounded w-full" />
+                    <div className="h-4 bg-gray-200 rounded w-5/6" />
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
                   </div>
                 </div>
-                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {noteContent}
-                </p>
-              </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Transcript
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <Mic size={14} />
+                      <span>Synced from Heidi</span>
+                    </div>
+                  </div>
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {transcriptContent}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
 
-              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Transcript
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Mic size={14} />
-                    <span>Synced from Heidi</span>
+          {/* Note Tab */}
+          {activeTab === 'note' && (
+            <>
+              {isLoading ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-6 bg-gray-200 rounded w-1/3" />
+                    <div className="h-4 bg-gray-200 rounded w-full" />
+                    <div className="h-4 bg-gray-200 rounded w-5/6" />
+                    <div className="h-4 bg-gray-200 rounded w-2/3" />
                   </div>
                 </div>
-                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {transcriptContent}
-                </p>
-              </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        {sessionDetails?.consultNoteStatus ?? 'UNKNOWN'}
+                      </p>
+                      <h2 className="text-xl font-semibold text-gray-900">
+                        {sessionDetails?.heading ?? 'Consult Note'}
+                      </h2>
+                    </div>
+                  </div>
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {noteContent}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
-      </div>
+        </div>
+        </div>
+        <TasksPanel
+          isOpen={isTasksPanelOpen}
+          onClose={() => setIsTasksPanelOpen(false)}
+          voiceActivities={voiceLog}
+          tasks={tasks}
+          onAddTask={handleAddTask}
+          onToggleTask={handleToggleTask}
+        />
       </div>
       <EmrSnapshotPanel
         isOpen={isEmrPanelOpen}
