@@ -6,6 +6,7 @@ import {
   Plus, 
   Bell, 
   ChevronRight, 
+  ChevronLeft,
   HelpCircle, 
   User,
   LayoutGrid,
@@ -13,7 +14,8 @@ import {
   Settings,
   Gift,
   MessageSquare,
-  Keyboard
+  Keyboard,
+  Calendar
 } from 'lucide-react';
 
 interface SidebarProps {
