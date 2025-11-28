@@ -1,20 +1,17 @@
 import { NextResponse } from 'next/server';
 import {
-  fetchSession,
+  fetchHeidiSessions,
   fetchSessionTranscription,
-  HeidiSessionResponse,
+  type HeidiSessionSummary,
 } from '@/lib/heidi';
-
-interface Params {
-  params: {
-    id: string;
-  };
-}
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(_: Request, { params }: Params) {
-  const { id } = params;
+export async function GET(
+  _: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const { id } = await context.params;
 
   if (!id) {
     return NextResponse.json(
@@ -24,20 +21,31 @@ export async function GET(_: Request, { params }: Params) {
   }
 
   try {
-    const [sessionResponse, transcriptionResponse] = await Promise.all([
-      fetchSession(id),
-      fetchSessionTranscription(id),
-    ]);
+    const { sessions, errors } = await fetchHeidiSessions([id]);
+    const session = sessions[0];
 
-    console.log('[heidi session detail]', {
-      id,
-      session: sessionResponse.session,
-      transcription: transcriptionResponse?.transcription ?? null,
-    });
+    if (!session) {
+      const message =
+        errors[0]?.message ??
+        `Session ${id} not found`;
+      const status = errors.length ? 502 : 404;
+      return NextResponse.json({ error: message }, { status });
+    }
+
+    let transcription: string | null = null;
+    try {
+      const transcriptionResponse = await fetchSessionTranscription(id);
+      transcription = transcriptionResponse?.transcription ?? null;
+    } catch (transcriptionError) {
+      console.warn('[heidi session detail] transcription unavailable', {
+        id,
+        error: transcriptionError,
+      });
+    }
 
     return NextResponse.json({
-      session: normalizeSession(sessionResponse),
-      transcription: transcriptionResponse?.transcription ?? null,
+      session: normalizeSession(session),
+      transcription,
     });
   } catch (error) {
     console.error('[heidi session detail] failed', error);
@@ -48,23 +56,22 @@ export async function GET(_: Request, { params }: Params) {
             ? error.message
             : 'Unexpected error fetching session details',
       },
-      { status: 500 },
+      { status: 502 },
     );
   }
 }
 
-function normalizeSession(response: HeidiSessionResponse) {
-  const session = response.session;
+function normalizeSession(session: HeidiSessionSummary) {
   return {
-    id: session.session_id,
-    patientName: session.patient?.name ?? 'Unknown patient',
-    createdAt: session.created_at,
-    updatedAt: session.updated_at,
-    durationSeconds: session.duration ?? null,
-    languageCode: session.language_code ?? 'en',
-    consultNoteStatus: session.consult_note?.status ?? 'UNKNOWN',
-    noteResult: session.consult_note?.result ?? null,
-    heading: session.consult_note?.heading ?? null,
+    id: session.id,
+    patientName: session.patientName,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    durationSeconds: session.durationSeconds ?? null,
+    languageCode: session.languageCode ?? 'en',
+    consultNoteStatus: session.consultNoteStatus ?? 'UNKNOWN',
+    noteResult: session.notePreview ?? null,
+    heading: session.template ?? null,
   };
 }
 

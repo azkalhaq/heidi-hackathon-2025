@@ -16,6 +16,8 @@ import {
   MoreVertical,
   Loader2,
 } from 'lucide-react';
+import EmrSnapshotPanel from '@/components/EmrSnapshotPanel';
+import type { EmrSnapshotData } from '@/types/emr';
 
 interface MainContentProps {
   selectedSessionId: string | null;
@@ -38,6 +40,10 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isEmrPanelOpen, setIsEmrPanelOpen] = useState(false);
+  const [emrSnapshot, setEmrSnapshot] = useState<EmrSnapshotData | null>(null);
+  const [isEmrLoading, setIsEmrLoading] = useState(false);
+  const [emrError, setEmrError] = useState<string | null>(null);
 
   const fetchSessionDetails = useCallback(async () => {
     if (!selectedSessionId) {
@@ -69,6 +75,23 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
     }
   }, [selectedSessionId]);
 
+  const fetchEmrSnapshot = useCallback(async () => {
+    setIsEmrLoading(true);
+    setEmrError(null);
+    try {
+      const response = await fetch('/api/emr-snapshot', { method: 'POST' });
+      const payload = (await response.json()) as EmrSnapshotData & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Failed to fetch EMR snapshot');
+      }
+      setEmrSnapshot(payload);
+    } catch (err) {
+      setEmrError(err instanceof Error ? err.message : 'Unknown EMR snapshot error');
+    } finally {
+      setIsEmrLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSessionDetails();
   }, [fetchSessionDetails]);
@@ -77,6 +100,13 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
     if (!selectedSessionId) return;
     setIsRefreshing(true);
     await fetchSessionDetails();
+  };
+
+  const handleOpenEmrSnapshot = () => {
+    setIsEmrPanelOpen(true);
+    if (!emrSnapshot && !isEmrLoading) {
+      void fetchEmrSnapshot();
+    }
   };
 
   const formatDuration = (seconds: number | null | undefined) => {
@@ -103,11 +133,18 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
     transcription ?? 'No transcription has been generated for this session.';
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
+    <>
+      <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         {/* Top Right Controls */}
         <div className="flex items-center justify-end gap-3 px-6 py-3">
+          <button
+            onClick={handleOpenEmrSnapshot}
+            className="bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-2.5 px-4 rounded-lg transition-colors"
+          >
+            EMR Snapshot
+          </button>
           <button
             onClick={handleTranscribe}
             disabled={!selectedSessionId || isRefreshing}
@@ -271,7 +308,16 @@ export default function MainContent({ selectedSessionId }: MainContentProps) {
           )}
         </div>
       </div>
-    </div>
+      </div>
+      <EmrSnapshotPanel
+        isOpen={isEmrPanelOpen}
+        onClose={() => setIsEmrPanelOpen(false)}
+        onFetch={() => void fetchEmrSnapshot()}
+        isLoading={isEmrLoading}
+        error={emrError}
+        data={emrSnapshot}
+      />
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
-import { DEFAULT_SESSION_IDS, HEIDI_API_BASE_URL } from './heidi/constants';
+'use server';
 
-export { DEFAULT_SESSION_IDS } from './heidi/constants';
+import { HEIDI_API_BASE_URL } from './heidi/constants';
 
 interface JwtResponse {
   token: string;
@@ -37,6 +37,24 @@ export interface HeidiSessionResponse {
 
 export interface HeidiTranscriptionResponse {
   transcription?: string | null;
+}
+
+export interface HeidiSessionSummary {
+  id: string;
+  name: string | null;
+  patientName: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  durationSeconds: number | null;
+  languageCode: string | null;
+  consultNoteStatus: string | null;
+  notePreview: string | null;
+  template?: string | null;
+}
+
+export interface HeidiSessionsResponse {
+  sessions: HeidiSessionSummary[];
+  errors: { id: string; message: string }[];
 }
 
 interface TokenCache {
@@ -76,11 +94,14 @@ async function fetchJwtToken(): Promise<string> {
 
   const url = new URL(`${HEIDI_API_BASE_URL}/jwt`);
   const email =
+    process.env.HEIDI_SAMPLE_EMAIL ??
     process.env.HEIDI_FAKE_USER_EMAIL ??
     `heidi-user+${Date.now()}@example.com`;
-  const randomId = Math.floor(Math.random() * 10_000_000);
+  const userId =
+    process.env.HEIDI_SAMPLE_USER_ID ??
+    Math.floor(Math.random() * 10_000_000).toString();
   url.searchParams.set('email', email);
-  url.searchParams.set('third_party_internal_id', randomId.toString());
+  url.searchParams.set('third_party_internal_id', userId);
 
   const response = await fetch(url, {
     headers: {
@@ -159,5 +180,48 @@ export async function fetchSessionTranscription(
 
 export async function fetchSessions(sessionIds: string[]) {
   return Promise.all(sessionIds.map((id) => fetchSession(id)));
+}
+
+export async function fetchHeidiSessions(
+  sessionIds: string[],
+): Promise<HeidiSessionsResponse> {
+  const results = await Promise.allSettled(
+    sessionIds.map(async (id) => {
+      const response = await fetchSession(id);
+      return response.session;
+    }),
+  );
+
+  const sessions: HeidiSessionSummary[] = [];
+  const errors: { id: string; message: string }[] = [];
+
+  results.forEach((result, index) => {
+    const id = sessionIds[index];
+    if (result.status === 'fulfilled') {
+      const session = result.value;
+      sessions.push({
+        id: session.session_id,
+        name: session.session_name ?? null,
+        patientName: session.patient?.name ?? 'Unknown patient',
+        createdAt: session.created_at ?? null,
+        updatedAt: session.updated_at ?? null,
+        durationSeconds:
+          typeof session.duration === 'number' ? session.duration : null,
+        languageCode:
+          session.language_code ?? session.output_language_code ?? 'en',
+        consultNoteStatus: session.consult_note?.status ?? null,
+        notePreview: session.consult_note?.result ?? null,
+        template: session.consult_note?.heading ?? null,
+      });
+    } else {
+      const message =
+        result.reason instanceof Error
+          ? result.reason.message
+          : 'Unknown Heidi API error';
+      errors.push({ id, message });
+    }
+  });
+
+  return { sessions, errors };
 }
 

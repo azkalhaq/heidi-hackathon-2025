@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Plus, 
   Bell, 
@@ -22,6 +22,15 @@ interface SidebarProps {
 
 export default function Sidebar({ onViewSessions }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleViewSessions = () => {
+    if (onViewSessions) {
+      onViewSessions();
+      return;
+    }
+    router.push('/sessions');
+  };
   
   return (
     <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
@@ -60,7 +69,7 @@ export default function Sidebar({ onViewSessions }: SidebarProps) {
       <div className="flex-1 overflow-y-auto py-2">
         <nav className="px-4 space-y-1">
           <button
-            onClick={onViewSessions}
+            onClick={handleViewSessions}
             className="w-full flex items-center justify-between py-2 px-3 rounded-lg transition-colors text-gray-700 hover:bg-gray-100"
           >
             <span>View sessions</span>
