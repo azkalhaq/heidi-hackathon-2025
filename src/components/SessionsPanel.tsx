@@ -1,108 +1,143 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { 
   Calendar, 
   Clock, 
   Globe, 
   Search, 
   Filter,
-  ChevronRight,
   FileText,
   User,
-  X
+  X,
+  Loader2,
 } from 'lucide-react';
 
-interface Session {
+interface SessionListItem {
   id: string;
   patientName: string;
-  date: string;
-  time: string;
-  duration: string;
-  language: string;
-  status: 'completed' | 'in-progress' | 'draft';
-  template?: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  durationSeconds: number | null;
+  languageCode: string | null;
+  consultNoteStatus: string | null;
 }
-
-const mockSessions: Session[] = [
-  {
-    id: '1',
-    patientName: 'John Doe',
-    date: 'Today',
-    time: '11:45 AM',
-    duration: '15:32',
-    language: 'English',
-    status: 'completed',
-    template: 'Goldilocks'
-  },
-  {
-    id: '2',
-    patientName: 'Jane Smith',
-    date: 'Yesterday',
-    time: '2:30 PM',
-    duration: '22:15',
-    language: 'English',
-    status: 'completed',
-    template: 'Standard'
-  },
-  {
-    id: '3',
-    patientName: 'Robert Johnson',
-    date: 'Jan 15, 2025',
-    time: '9:00 AM',
-    duration: '18:45',
-    language: 'Spanish',
-    status: 'completed'
-  },
-  {
-    id: '4',
-    patientName: 'Emily Davis',
-    date: 'Jan 14, 2025',
-    time: '3:20 PM',
-    duration: '12:30',
-    language: 'English',
-    status: 'draft'
-  },
-  {
-    id: '5',
-    patientName: 'Michael Brown',
-    date: 'Jan 13, 2025',
-    time: '10:15 AM',
-    duration: '25:00',
-    language: 'English',
-    status: 'completed',
-    template: 'Comprehensive'
-  },
-];
 
 interface SessionsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  selectedSessionId?: string | null;
+  onSelectSession?: (sessionId: string) => void;
 }
 
-export default function SessionsPanel({ isOpen, onClose }: SessionsPanelProps) {
-  const [sessions] = useState<Session[]>(mockSessions);
+export default function SessionsPanel({
+  isOpen,
+  onClose,
+  selectedSessionId,
+  onSelectSession,
+}: SessionsPanelProps) {
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredSessions = sessions.filter(session => {
-    const matchesSearch = session.patientName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || session.status === filterStatus;
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/heidi/sessions');
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to load sessions');
+        }
+        setSessions(payload.sessions ?? []);
+        if (payload.failedSessions?.length) {
+          const failedList = payload.failedSessions
+            .map(
+              (failure: { id: string }) =>
+                failure.id.slice(-6) || failure.id,
+            )
+            .join(', ');
+          setError(
+            `Some sessions could not be loaded (${payload.failedSessions.length}): ${failedList}`,
+          );
+        } else {
+          setError(null);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Unknown error loading sessions',
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      loadSessions();
+    }
+  }, [isOpen]);
+
+  const normalizeStatus = (status: string | null | undefined) => {
+    const normalized = status?.toLowerCase() ?? 'unknown';
+    if (normalized === 'created' || normalized === 'completed') return 'completed';
+    if (normalized === 'processing' || normalized === 'in-progress') return 'in-progress';
+    if (normalized === 'draft') return 'draft';
+    return 'unknown';
+  };
+
+  const filteredSessions = sessions.filter((session) => {
+    const matchesSearch = session.patientName
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesFilter =
+      filterStatus === 'all' ||
+      normalizeStatus(session.consultNoteStatus) === filterStatus;
     return matchesSearch && matchesFilter;
   });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const getStatusColor = (status: string | null | undefined) => {
+    switch (normalizeStatus(status)) {
       case 'completed':
+      case 'created':
         return 'bg-green-100 text-green-700';
       case 'in-progress':
+      case 'processing':
         return 'bg-blue-100 text-blue-700';
       case 'draft':
         return 'bg-gray-100 text-gray-700';
       default:
         return 'bg-gray-100 text-gray-700';
     }
+  };
+
+  const formatStatusLabel = (status: string | null | undefined) => {
+    if (!status) return 'Unknown';
+    return status
+      .toLowerCase()
+      .split(/[_\s]/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return 'Unknown';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs
+      .toString()
+      .padStart(2, '0')}`;
+  };
+
+  const formatDate = (createdAt: string | null) => {
+    if (!createdAt) return 'Unknown date';
+    const date = new Date(createdAt);
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   return (
@@ -153,7 +188,15 @@ export default function SessionsPanel({ isOpen, onClose }: SessionsPanelProps) {
 
           {/* Sessions List */}
           <div className="flex-1 overflow-y-auto">
-            {filteredSessions.length === 0 ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="animate-spin text-gray-400" size={24} />
+              </div>
+            ) : error ? (
+              <div className="text-center py-12 px-4 text-sm text-red-600">
+                {error}
+              </div>
+            ) : filteredSessions.length === 0 ? (
               <div className="text-center py-12 px-4">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
                 <p className="text-gray-600 text-sm">No sessions found</p>
@@ -161,11 +204,15 @@ export default function SessionsPanel({ isOpen, onClose }: SessionsPanelProps) {
             ) : (
               <div className="divide-y divide-gray-200">
                 {filteredSessions.map((session) => (
-                  <Link
+                  <button
                     key={session.id}
-                    href="/"
-                    onClick={onClose}
-                    className="block hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      onSelectSession?.(session.id);
+                      onClose();
+                    }}
+                    className={`block w-full text-left hover:bg-gray-50 transition-colors ${
+                      selectedSessionId === session.id ? 'bg-gray-50' : ''
+                    }`}
                   >
                     <div className="px-4 py-3">
                       <div className="flex items-start gap-3 mb-2">
@@ -173,36 +220,37 @@ export default function SessionsPanel({ isOpen, onClose }: SessionsPanelProps) {
                           <User size={18} className="text-purple-700" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 truncate">{session.patientName}</div>
+                          <div className="font-medium text-gray-900 truncate">
+                            {session.patientName}
+                          </div>
                           <div className="flex items-center gap-3 text-xs text-gray-600 mt-1">
                             <div className="flex items-center gap-1">
                               <Calendar size={12} />
-                              <span>{session.date}</span>
+                              <span>{formatDate(session.createdAt)}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock size={12} />
-                              <span>{session.duration}</span>
+                              <span>{formatDuration(session.durationSeconds)}</span>
                             </div>
                           </div>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(session.status)}`}>
-                          {session.status === 'in-progress' ? 'In Progress' : session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(
+                            session.consultNoteStatus,
+                          )}`}
+                        >
+                          {formatStatusLabel(session.consultNoteStatus)}
                         </span>
                       </div>
-                      
+
                       <div className="ml-[52px] flex items-center gap-2 text-xs text-gray-500">
                         <div className="flex items-center gap-1">
                           <Globe size={12} />
-                          <span>{session.language}</span>
+                          <span>{session.languageCode ?? 'Unknown'}</span>
                         </div>
-                        {session.template && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                            {session.template}
-                          </span>
-                        )}
                       </div>
                     </div>
-                  </Link>
+                  </button>
                 ))}
               </div>
             )}

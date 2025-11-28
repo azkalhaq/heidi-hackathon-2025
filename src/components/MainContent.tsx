@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Mic,
   ChevronDown,
@@ -13,29 +13,94 @@ import {
   Copy,
   Undo2,
   Redo2,
-  MoreVertical
+  MoreVertical,
+  Loader2,
 } from 'lucide-react';
 
-export default function MainContent() {
-  const [showTranscribeDropdown, setShowTranscribeDropdown] = useState(false);
-  const [showModeDropdown, setShowModeDropdown] = useState(false);
-  const [selectedMode, setSelectedMode] = useState('Transcribing');
-  const transcribeDropdownRef = useRef<HTMLDivElement>(null);
-  const modeDropdownRef = useRef<HTMLDivElement>(null);
+interface MainContentProps {
+  selectedSessionId: string | null;
+}
+
+interface SessionDetailPayload {
+  id: string;
+  patientName: string;
+  createdAt: string | null;
+  durationSeconds: number | null;
+  languageCode: string | null;
+  consultNoteStatus: string | null;
+  noteResult: string | null;
+  heading: string | null;
+}
+
+export default function MainContent({ selectedSessionId }: MainContentProps) {
+  const [sessionDetails, setSessionDetails] = useState<SessionDetailPayload | null>(null);
+  const [transcription, setTranscription] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSessionDetails = useCallback(async () => {
+    if (!selectedSessionId) {
+      setSessionDetails(null);
+      setTranscription(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/heidi/sessions/${selectedSessionId}`);
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to fetch session');
+      }
+
+      setSessionDetails(payload.session);
+      setTranscription(payload.transcription ?? null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Unknown error loading session',
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [selectedSessionId]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (transcribeDropdownRef.current && !transcribeDropdownRef.current.contains(event.target as Node)) {
-        setShowTranscribeDropdown(false);
-      }
-      if (modeDropdownRef.current && !modeDropdownRef.current.contains(event.target as Node)) {
-        setShowModeDropdown(false);
-      }
-    };
+    fetchSessionDetails();
+  }, [fetchSessionDetails]);
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const handleTranscribe = async () => {
+    if (!selectedSessionId) return;
+    setIsRefreshing(true);
+    await fetchSessionDetails();
+  };
+
+  const formatDuration = (seconds: number | null | undefined) => {
+    if (!seconds || Number.isNaN(seconds)) {
+      return 'Unknown duration';
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
+      .toString()
+      .padStart(2, '0')}`;
+  };
+
+  const formatDate = (isoDate: string | null | undefined) => {
+    if (!isoDate) return 'Unknown date';
+    const date = new Date(isoDate);
+    return date.toLocaleString();
+  };
+
+  const noteContent =
+    sessionDetails?.noteResult ?? 'No consult note is available yet.';
+
+  const transcriptContent =
+    transcription ?? 'No transcription has been generated for this session.';
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
@@ -43,28 +108,18 @@ export default function MainContent() {
       <div className="bg-white border-b border-gray-200">
         {/* Top Right Controls */}
         <div className="flex items-center justify-end gap-3 px-6 py-3">
-          <div className="relative" ref={transcribeDropdownRef}>
-            <button
-              onClick={() => setShowTranscribeDropdown(!showTranscribeDropdown)}
-              className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 rounded-lg flex items-center gap-2 transition-colors"
-            >
+          <button
+            onClick={handleTranscribe}
+            disabled={!selectedSessionId || isRefreshing}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            {isRefreshing ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
               <Mic size={18} />
-              <span>Transcribe</span>
-              <ChevronDown size={16} />
-            </button>
-            {showTranscribeDropdown && (
-              <div className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[200px]">
-                <div className="py-1">
-                  <button className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">
-                    Transcribe
-                  </button>
-                  <button className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">
-                    Dictate
-                  </button>
-                </div>
-              </div>
             )}
-          </div>
+            <span>Transcribe</span>
+          </button>
           <div className="flex items-center gap-2 text-gray-600">
             <span className="font-mono text-sm">00:00</span>
             <div className="flex items-center gap-1">
@@ -84,7 +139,9 @@ export default function MainContent() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-900">John Doe</span>
+                <span className="font-medium text-gray-900">
+                  {sessionDetails?.patientName ?? 'No session selected'}
+                </span>
                 <button className="text-gray-400 hover:text-gray-600">
                   <Pencil size={14} />
                 </button>
@@ -100,15 +157,15 @@ export default function MainContent() {
           <div className="flex items-center gap-6 text-sm text-gray-600">
             <div className="flex items-center gap-1.5">
               <Calendar size={14} />
-              <span>Today 11:45AM</span>
+              <span>{formatDate(sessionDetails?.createdAt)}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Globe size={14} />
-              <span>English</span>
+              <span>{sessionDetails?.languageCode ?? 'Unknown language'}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Zap size={14} className="text-yellow-500" />
-              <span>14 days</span>
+              <span>{formatDuration(sessionDetails?.durationSeconds ?? null)}</span>
             </div>
           </div>
         </div>
@@ -162,75 +219,56 @@ export default function MainContent() {
 
       {/* Main Content Body */}
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Start this session using the header
-            </h2>
-            <p className="text-gray-600">
-              Your note will appear here once your session is complete
-            </p>
-          </div>
-
-          {/* Session Mode Selection */}
-          <div className="bg-gray-100 rounded-lg p-6">
-            <div className="relative inline-block w-full" ref={modeDropdownRef}>
-              <button
-                onClick={() => setShowModeDropdown(!showModeDropdown)}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Mic size={18} />
-                  <span>Start transcribing</span>
-                </div>
-                <ChevronDown size={16} />
-              </button>
-              
-              {showModeDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                  <button
-                    onClick={() => {
-                      setSelectedMode('Transcribing');
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between first:rounded-t-lg"
-                  >
-                    <span>Transcribing</span>
-                    {selectedMode === 'Transcribing' && (
-                      <span className="text-green-600">✓</span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedMode('Dictating');
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between"
-                  >
-                    <span>Dictating</span>
-                    {selectedMode === 'Dictating' && (
-                      <span className="text-green-600">✓</span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedMode('Upload session audio');
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between last:rounded-b-lg"
-                  >
-                    <span>Upload session audio</span>
-                    {selectedMode === 'Upload session audio' && (
-                      <span className="text-green-600">✓</span>
-                    )}
-                  </button>
-                </div>
-              )}
+        <div className="max-w-4xl mx-auto space-y-6">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+              {error}
             </div>
-            <p className="mt-4 text-sm text-gray-600 text-center">
-              Select your visit mode in the dropdown
-            </p>
-          </div>
+          )}
+
+          {isLoading ? (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="animate-pulse space-y-4">
+                <div className="h-6 bg-gray-200 rounded w-1/3" />
+                <div className="h-4 bg-gray-200 rounded w-full" />
+                <div className="h-4 bg-gray-200 rounded w-5/6" />
+                <div className="h-4 bg-gray-200 rounded w-2/3" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-sm text-gray-500">
+                      {sessionDetails?.consultNoteStatus ?? 'UNKNOWN'}
+                    </p>
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      {sessionDetails?.heading ?? 'Consult Note'}
+                    </h2>
+                  </div>
+                </div>
+                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {noteContent}
+                </p>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Transcript
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <Mic size={14} />
+                    <span>Synced from Heidi</span>
+                  </div>
+                </div>
+                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {transcriptContent}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
