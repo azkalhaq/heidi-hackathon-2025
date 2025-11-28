@@ -34,3 +34,24 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Heidi API setup
+
+This project integrates with the Heidi Scribe API for fetching real session data and transcriptions. To run the integration locally:
+
+1. Create a `.env.local` file in the project root.
+2. Add the shared API key provided by Heidi:
+
+```
+HEIDI_API_KEY=your_shared_key_here
+# Optional: override the fake user email sent to Heidi when requesting JWTs
+HEIDI_FAKE_USER_EMAIL=demo+heidi@example.com
+```
+
+The frontend talks to `/api/heidi/*` route handlers, which in turn:
+
+- Exchange the API key for a short-lived JWT (`/jwt` endpoint).
+- Fetch summary data for the default session IDs.
+- Fetch detailed consult notes and transcriptions for a selected session.
+
+Make sure to restart the dev server after setting your environment variables so the routes can read them.

@@ -1,91 +1,76 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { 
-  Calendar, 
-  Clock, 
-  Globe, 
-  Search, 
+import {
+  Calendar,
+  Clock,
+  Globe,
+  Search,
   Filter,
   ChevronRight,
   FileText,
-  User
+  User,
+  Loader2,
 } from 'lucide-react';
 
-interface Session {
+interface SessionRow {
   id: string;
   patientName: string;
-  date: string;
-  time: string;
-  duration: string;
-  language: string;
-  status: 'completed' | 'in-progress' | 'draft';
-  template?: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  durationSeconds: number | null;
+  languageCode: string | null;
+  consultNoteStatus: string | null;
+  notePreview: string | null;
 }
 
-const mockSessions: Session[] = [
-  {
-    id: '1',
-    patientName: 'John Doe',
-    date: 'Today',
-    time: '11:45 AM',
-    duration: '15:32',
-    language: 'English',
-    status: 'completed',
-    template: 'Goldilocks'
-  },
-  {
-    id: '2',
-    patientName: 'Jane Smith',
-    date: 'Yesterday',
-    time: '2:30 PM',
-    duration: '22:15',
-    language: 'English',
-    status: 'completed',
-    template: 'Standard'
-  },
-  {
-    id: '3',
-    patientName: 'Robert Johnson',
-    date: 'Jan 15, 2025',
-    time: '9:00 AM',
-    duration: '18:45',
-    language: 'Spanish',
-    status: 'completed'
-  },
-  {
-    id: '4',
-    patientName: 'Emily Davis',
-    date: 'Jan 14, 2025',
-    time: '3:20 PM',
-    duration: '12:30',
-    language: 'English',
-    status: 'draft'
-  },
-  {
-    id: '5',
-    patientName: 'Michael Brown',
-    date: 'Jan 13, 2025',
-    time: '10:15 AM',
-    duration: '25:00',
-    language: 'English',
-    status: 'completed',
-    template: 'Comprehensive'
-  },
-];
-
 export default function SessionsList() {
-  const [sessions] = useState<Session[]>(mockSessions);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredSessions = sessions.filter(session => {
-    const matchesFilter = filterStatus === 'all' || session.status === filterStatus;
+  useEffect(() => {
+    const loadSessions = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/heidi/sessions');
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to load sessions');
+        }
+        setSessions(payload.sessions ?? []);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Unknown error loading sessions',
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSessions();
+  }, []);
+
+  const normalizeStatus = (status: string | null | undefined) => {
+    const normalized = status?.toLowerCase() ?? 'unknown';
+    if (normalized === 'created' || normalized === 'completed') return 'completed';
+    if (normalized === 'processing' || normalized === 'in-progress') return 'in-progress';
+    if (normalized === 'draft') return 'draft';
+    return 'unknown';
+  };
+
+  const filteredSessions = sessions.filter((session) => {
+    const matchesFilter =
+      filterStatus === 'all' ||
+      normalizeStatus(session.consultNoteStatus) === filterStatus;
     return matchesFilter;
   });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const getStatusColor = (status: string | null | undefined) => {
+    switch (normalizeStatus(status)) {
       case 'completed':
         return 'bg-green-100 text-green-700';
       case 'in-progress':
@@ -95,6 +80,43 @@ export default function SessionsList() {
       default:
         return 'bg-gray-100 text-gray-700';
     }
+  };
+
+  const formatStatusLabel = (status: string | null | undefined) => {
+    if (!status) return 'Unknown';
+    return status
+      .toLowerCase()
+      .split(/[_\s]/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const formatDate = (createdAt: string | null) => {
+    if (!createdAt) return 'Unknown';
+    const date = new Date(createdAt);
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatTime = (createdAt: string | null) => {
+    if (!createdAt) return '—';
+    const date = new Date(createdAt);
+    return date.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return 'Unknown';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   return (
@@ -157,23 +179,27 @@ export default function SessionsList() {
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto p-6">
-          {filteredSessions.length === 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-gray-400" size={32} />
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 text-red-600">{error}</div>
+          ) : filteredSessions.length === 0 ? (
             <div className="text-center py-12">
               <FileText size={48} className="mx-auto text-gray-400 mb-4" />
               <p className="text-gray-600">No sessions found</p>
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              {/* Table Header */}
               <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 grid grid-cols-12 gap-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">
                 <div className="col-span-4">Patient</div>
-                <div className="col-span-2">Date & Time</div>
+                <div className="col-span-3">Date & Time</div>
                 <div className="col-span-2">Duration</div>
-                <div className="col-span-2">Template</div>
-                <div className="col-span-2 text-right">Status</div>
+                <div className="col-span-2">Preview</div>
+                <div className="col-span-1 text-right">Status</div>
               </div>
-              
-              {/* Table Rows */}
+
               <div className="divide-y divide-gray-200">
                 {filteredSessions.map((session) => (
                   <Link
@@ -182,52 +208,49 @@ export default function SessionsList() {
                     className="block hover:bg-gray-50 transition-colors"
                   >
                     <div className="px-4 py-3 grid grid-cols-12 gap-4 items-center">
-                      {/* Patient */}
                       <div className="col-span-4 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
                           <User size={16} className="text-purple-700" />
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium text-gray-900 truncate">{session.patientName}</div>
+                          <div className="font-medium text-gray-900 truncate">
+                            {session.patientName}
+                          </div>
                           <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
                             <Globe size={12} />
-                            <span>{session.language}</span>
+                            <span>{session.languageCode ?? 'Unknown'}</span>
                           </div>
                         </div>
                       </div>
-                      
-                      {/* Date & Time */}
-                      <div className="col-span-2 text-sm text-gray-700">
+
+                      <div className="col-span-3 text-sm text-gray-700">
                         <div className="flex items-center gap-1.5">
                           <Calendar size={14} className="text-gray-400" />
-                          <span>{session.date}</span>
+                          <span>{formatDate(session.createdAt)}</span>
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">{session.time}</div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {formatTime(session.createdAt)}
+                        </div>
                       </div>
-                      
-                      {/* Duration */}
+
                       <div className="col-span-2 text-sm text-gray-700">
                         <div className="flex items-center gap-1.5">
                           <Clock size={14} className="text-gray-400" />
-                          <span>{session.duration}</span>
+                          <span>{formatDuration(session.durationSeconds)}</span>
                         </div>
                       </div>
-                      
-                      {/* Template */}
-                      <div className="col-span-2">
-                        {session.template ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                            {session.template}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
+
+                      <div className="col-span-2 text-xs text-gray-500 truncate">
+                        {session.notePreview ?? 'No note yet'}
                       </div>
-                      
-                      {/* Status */}
-                      <div className="col-span-2 flex items-center justify-end gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
-                          {session.status === 'in-progress' ? 'In Progress' : session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+
+                      <div className="col-span-1 flex items-center justify-end gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                            session.consultNoteStatus,
+                          )}`}
+                        >
+                          {formatStatusLabel(session.consultNoteStatus)}
                         </span>
                         <ChevronRight size={16} className="text-gray-400" />
                       </div>
