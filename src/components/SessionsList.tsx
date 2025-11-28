@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
@@ -28,8 +28,10 @@ interface SessionRow {
 export default function SessionsList() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSessions = async () => {
@@ -42,6 +44,18 @@ export default function SessionsList() {
           throw new Error(payload.error ?? 'Failed to load sessions');
         }
         setSessions(payload.sessions ?? []);
+        if (payload.failedSessions?.length) {
+          const failedIds = payload.failedSessions
+            .map((failure: { id: string }) =>
+              failure.id.length > 6 ? failure.id.slice(-6) : failure.id,
+            )
+            .join(', ');
+          setWarning(
+            `Some sessions could not be loaded (${payload.failedSessions.length}): ${failedIds}`,
+          );
+        } else {
+          setWarning(null);
+        }
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Unknown error loading sessions',
@@ -62,12 +76,20 @@ export default function SessionsList() {
     return 'unknown';
   };
 
-  const filteredSessions = sessions.filter((session) => {
-    const matchesFilter =
-      filterStatus === 'all' ||
-      normalizeStatus(session.consultNoteStatus) === filterStatus;
-    return matchesFilter;
-  });
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((session) => {
+      const matchesFilter =
+        filterStatus === 'all' ||
+        normalizeStatus(session.consultNoteStatus) === filterStatus;
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !query ||
+        session.patientName.toLowerCase().includes(query) ||
+        (session.notePreview ?? '').toLowerCase().includes(query) ||
+        session.id.toLowerCase().includes(query);
+      return matchesFilter && matchesSearch;
+    });
+  }, [filterStatus, searchQuery, sessions]);
 
   const getStatusColor = (status: string | null | undefined) => {
     switch (normalizeStatus(status)) {
@@ -124,22 +146,35 @@ export default function SessionsList() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         {/* Top Right Controls */}
-        <div className="flex items-center justify-end gap-3 px-6 py-3">
-          <div className="flex items-center gap-2 text-gray-600">
-            <Search size={18} className="cursor-pointer hover:text-gray-900" />
-            <div className="relative">
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="appearance-none pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white cursor-pointer"
-              >
-                <option value="all">All Status</option>
-                <option value="completed">Completed</option>
-                <option value="in-progress">In Progress</option>
-                <option value="draft">Draft</option>
-              </select>
-              <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            </div>
+        <div className="flex flex-wrap items-center justify-end gap-3 px-6 py-3">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="Search by patient, note, or ID"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+            />
+          </div>
+          <div className="relative">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="appearance-none pl-8 pr-8 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="completed">Completed</option>
+              <option value="in-progress">In Progress</option>
+              <option value="draft">Draft</option>
+            </select>
+            <Filter
+              size={14}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
           </div>
         </div>
 
@@ -179,6 +214,11 @@ export default function SessionsList() {
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto p-6">
+          {warning && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {warning}
+            </div>
+          )}
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="animate-spin text-gray-400" size={32} />
@@ -204,7 +244,7 @@ export default function SessionsList() {
                 {filteredSessions.map((session) => (
                   <Link
                     key={session.id}
-                    href="/"
+                    href={`/?sessionId=${encodeURIComponent(session.id)}`}
                     className="block hover:bg-gray-50 transition-colors"
                   >
                     <div className="px-4 py-3 grid grid-cols-12 gap-4 items-center">
