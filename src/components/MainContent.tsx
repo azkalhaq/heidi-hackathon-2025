@@ -771,9 +771,109 @@ export default function MainContent({
         return;
       }
 
-      setVoiceError('Voice command not recognized. Try: "pre chart", "fetch EMR", "start referral", "generate prescription", or "automate tasks".');
+      // Navigation and view control
+      if (
+        looseMatch(lc, ['show context', 'open context', 'view context']) ||
+        looseMatch(lc, ['show pre chart', 'show pre-chart'])
+      ) {
+        setActiveTab('context');
+        pushVoiceLog(
+          'Context view opened',
+          'Switched to the Context tab to show pre-visit and EMR snapshot data.',
+        );
+        return;
+      }
+      if (
+        looseMatch(lc, ['show transcript', 'open transcript', 'view transcript'])
+      ) {
+        setActiveTab('transcript');
+        pushVoiceLog(
+          'Transcript view opened',
+          'Switched to the Transcript tab so the clinician can review the conversation.',
+        );
+        return;
+      }
+      if (
+        looseMatch(lc, ['show note', 'open note', 'view note', 'show consult note'])
+      ) {
+        setActiveTab('note');
+        pushVoiceLog(
+          'Note view opened',
+          'Switched to the Note tab to review the consult note.',
+        );
+        return;
+      }
+      if (
+        looseMatch(lc, ['show prescription', 'open prescription', 'view prescription'])
+      ) {
+        if (isPrescriptionAcknowledged || prescriptionDraft) {
+          setActiveTab('prescription');
+          pushVoiceLog(
+            'Prescription view opened',
+            'Switched to the Prescription tab so the clinician can review and edit the draft.',
+          );
+        } else {
+          setVoiceError(
+            'No acknowledged prescription is available yet. Generate and acknowledge a prescription first.',
+          );
+        }
+        return;
+      }
+      if (
+        looseMatch(lc, ['show emr data', 'show emr snapshot', 'open emr data'])
+      ) {
+        setActiveTab('context');
+        handleOpenEmrSnapshot();
+        void fetchEmrSnapshot();
+        pushVoiceLog(
+          'EMR data opened',
+          'Opened the EMR snapshot panel with current EMR data for this patient.',
+        );
+        return;
+      }
+      if (
+        looseMatch(lc, ['show tasks', 'open tasks', 'open task panel', 'show task panel'])
+      ) {
+        if (!isTasksPanelOpen) {
+          onToggleTasksPanel?.();
+        }
+        pushVoiceLog(
+          'Tasks panel opened',
+          'Opened the Tasks panel to review and coordinate follow-up actions.',
+        );
+        return;
+      }
+      if (
+        looseMatch(lc, ['hide tasks', 'close tasks', 'close task panel', 'hide task panel'])
+      ) {
+        if (isTasksPanelOpen) {
+          onToggleTasksPanel?.();
+        }
+        pushVoiceLog(
+          'Tasks panel closed',
+          'Closed the Tasks panel to focus on the main workspace.',
+        );
+        return;
+      }
+
+      setVoiceError(
+        'Voice command not recognized. Try: "pre chart", "fetch EMR", "show note", "show transcript", "show context", "show tasks", "show prescription", "generate prescription", or "automate tasks".',
+      );
     },
-    [fetchEmrSnapshot, fetchPrechart, noteContent, effectivePatientName, prechart?.reasonForVisit, generateReferral, generatePrescription, onAutomateAllTasksRequest],
+    [
+      fetchEmrSnapshot,
+      fetchPrechart,
+      noteContent,
+      effectivePatientName,
+      prechart?.reasonForVisit,
+      generateReferral,
+      generatePrescription,
+      onAutomateAllTasksRequest,
+      isTasksPanelOpen,
+      onToggleTasksPanel,
+      isPrescriptionAcknowledged,
+      prescriptionDraft,
+    ],
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -942,6 +1042,7 @@ export default function MainContent({
                   <li>• &quot;Fetch EMR snapshot&quot;</li>
                   <li>• &quot;Fetch from EMR&quot;</li>
                   <li>• &quot;Open EMR&quot;</li>
+                  <li>• &quot;Show EMR data&quot;</li>
                 </ul>
               </div>
               <div>
@@ -971,16 +1072,27 @@ export default function MainContent({
                 </ul>
               </div>
               <div>
-                <p className="font-semibold text-gray-700 mb-1">Tasks automation</p>
+                <p className="font-semibold text-gray-700 mb-1">Tasks &amp; navigation</p>
                 <ul className="space-y-0.5 text-gray-600">
                   <li>• &quot;Automate tasks&quot;</li>
                   <li>• &quot;Automate all tasks&quot;</li>
                   <li>• &quot;Complete all tasks&quot;</li>
+                  <li>• &quot;Show tasks&quot; / &quot;Hide tasks&quot;</li>
+                  <li>• &quot;Show note&quot; / &quot;Show transcript&quot; / &quot;Show context&quot;</li>
+                  <li>• &quot;Show prescription&quot; (after one is generated)</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-700 mb-1">Prescription</p>
+                <ul className="space-y-0.5 text-gray-600">
+                  <li>• &quot;Generate prescription&quot;</li>
+                  <li>• &quot;New prescription&quot;</li>
+                  <li>• &quot;Write prescription&quot;</li>
                 </ul>
               </div>
             </div>
             <p className="text-[10px] text-gray-500 mt-3 pt-3 border-t border-gray-200">
-              Tip: Commands are flexible - you can use variations like &quot;Generate Referral&quot;, &quot;Send Referral&quot;, or &quot;Create Referral&quot; - they all work the same way.
+              Tip: Commands are flexible – you can use variations like &quot;Generate Referral&quot;, &quot;Send Referral&quot;, or &quot;Create Referral&quot; and they will be understood the same way.
             </p>
           </div>
         </div>
@@ -1516,31 +1628,9 @@ export default function MainContent({
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-              <button
-                      onClick={handleOpenEmrSnapshot}
-                      disabled={isEmrLoading}
-                      className="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Loader2
-                        size={14}
-                        className={`${
-                          isEmrLoading ? 'opacity-100 animate-spin' : 'opacity-0'
-                        } transition-opacity`}
-                      />
-                      <Eye size={14} />
-                      <span>{isEmrLoading ? 'Fetching…' : 'View Full'}</span>
-                    </button>
-                    <button
-                      onClick={() => void fetchEmrSnapshot()}
-                      disabled={isEmrLoading}
-                      className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 transition-colors"
-                      title="Refresh EMR data"
-                    >
-                      <RefreshCw size={14} className={isEmrLoading ? 'animate-spin' : ''} />
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2 w-full justify-between">
                     {/* Quick links to external EMR portals (open in new tab) */}
-                    <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-500 ml-1">
+                    <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
                       <span className="mr-1">Open EMR:</span>
                       <button
                         type="button"
@@ -1569,6 +1659,30 @@ export default function MainContent({
                         className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
                       >
                         Allscripts
+                      </button>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        onClick={handleOpenEmrSnapshot}
+                        disabled={isEmrLoading}
+                        className="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Loader2
+                          size={14}
+                          className={`${
+                            isEmrLoading ? 'opacity-100 animate-spin' : 'opacity-0'
+                          } transition-opacity`}
+                        />
+                        <Eye size={14} />
+                        <span>{isEmrLoading ? 'Fetching…' : 'View Full'}</span>
+                      </button>
+                      <button
+                        onClick={() => void fetchEmrSnapshot()}
+                        disabled={isEmrLoading}
+                        className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 transition-colors"
+                        title="Refresh EMR data"
+                      >
+                        <RefreshCw size={14} className={isEmrLoading ? 'animate-spin' : ''} />
                       </button>
                     </div>
                   </div>
