@@ -208,6 +208,7 @@ export default function MainContent({
   const [isSharing, setIsSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
 
   const noteContent =
@@ -390,6 +391,8 @@ export default function MainContent({
       
       console.log('[Referral Generation] Setting draft with EMR snapshot:', draftData.emrSnapshot);
       setReferralDraft(draftData);
+      // Auto-open inline share panel when referral is ready
+      setShowShareModal(true);
     } catch (err) {
       setReferralGenerationError(
         err instanceof Error ? err.message : 'Unknown error generating referral',
@@ -407,6 +410,7 @@ export default function MainContent({
             : '',
         emrSnapshot: fallbackEmrSnapshot,
       });
+      setShowShareModal(true);
     } finally {
       setIsGeneratingReferral(false);
     }
@@ -454,6 +458,26 @@ export default function MainContent({
       setCopiedShareUrl(true);
       setTimeout(() => setCopiedShareUrl(false), 2000);
     }
+  };
+
+  const copySharePassword = () => {
+    if (sharePassword) {
+      navigator.clipboard.writeText(sharePassword);
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 2000);
+    }
+  };
+
+  const generateRandomPassword = () => {
+    // Simple random secret key generator for demo purposes
+    const chars =
+      'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    const length = 12;
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setSharePassword(result);
   };
 
   useEffect(() => {
@@ -1033,7 +1057,7 @@ export default function MainContent({
                     {isPrechartLoading && <Loader2 size={14} className="animate-spin" />}
                     <span>{isPrechartLoading ? 'Pre-charting…' : 'Pre-chart from EMR'}</span>
                   </button>
-                </div>
+          </div>
 
             {prechartError && (
               <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -1163,7 +1187,7 @@ export default function MainContent({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+              <button
                       onClick={handleOpenEmrSnapshot}
                       disabled={isEmrLoading}
                       className="inline-flex items-center gap-2 bg-purple-700 hover:bg-purple-800 text-white font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
@@ -1205,20 +1229,20 @@ export default function MainContent({
                     {emrSnapshot.problems && emrSnapshot.problems.length > 0 && (
                       <div>
                         <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                             <AlertTriangle className="text-red-500" size={18} />
                             <h3 className="text-sm font-semibold text-gray-900">Problems</h3>
                             <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">
                               {emrSnapshot.problems.length}
                             </span>
-                          </div>
+                </div>
                   <button
                             onClick={handleOpenEmrSnapshot}
                             className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
                           >
                             <Eye size={12} />
                             View All
-                          </button>
+              </button>
                         </div>
                         <div className="space-y-2">
                           {emrSnapshot.problems.slice(0, 3).map((problem, idx) => (
@@ -1270,7 +1294,7 @@ export default function MainContent({
                               {emrSnapshot.medications.length}
                             </span>
                           </div>
-                          <button
+                  <button
                             onClick={handleOpenEmrSnapshot}
                             className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
                           >
@@ -1566,193 +1590,136 @@ export default function MainContent({
                   </label>
                   <div className="px-3 py-2 rounded-md border border-gray-200 bg-gray-50 text-gray-800 text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
                     {referralDraft.notePreview}
-        </div>
-      </div>
+                  </div>
+                </div>
               )}
 
-    </div>
+              </div>
             </div>
-            <div className="flex-shrink-0 px-8 py-4 border-t border-gray-200 bg-white flex items-center justify-between">
+            {/* Footer with Close + Sharing controls */}
+            <div className="flex-shrink-0 px-8 py-3 border-t border-gray-200 bg-white flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <button
                 type="button"
-                onClick={() => setShowShareModal(true)}
-                className="inline-flex items-center gap-2 rounded-md border border-purple-300 bg-white text-purple-700 text-sm font-medium px-4 py-2 hover:bg-purple-50 transition-colors"
+                onClick={() => {
+                  setReferralDraft(null);
+                  setIsGeneratingReferral(false);
+                  setReferralGenerationError(null);
+                  setShowShareModal(false);
+                }}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors self-end md:self-auto"
               >
-                <Share2 size={16} />
-                <span>Share</span>
+                <span>Close</span>
               </button>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReferralDraft(null);
-                    setIsGeneratingReferral(false);
-                    setReferralGenerationError(null);
-                    setShowShareModal(false);
-                    setShareUrl(null);
-                    setSharePassword('');
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
-                >
-                  <span>Cancel</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // In production, this would send the referral to OpenEMR
-                    setReferralDraft(null);
-                    setIsGeneratingReferral(false);
-                    setReferralGenerationError(null);
-                    setShowShareModal(false);
-                    setShareUrl(null);
-                    setSharePassword('');
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 text-white text-sm font-semibold px-4 py-2 hover:bg-indigo-700 transition-colors"
-                >
-                  <span>Send Referral</span>
-                </button>
+              <div className="flex flex-col md:flex-row md:items-center gap-2 text-[11px]">
+                {/* Password controls */}
+                <div className="flex items-center gap-2">
+                  <Lock className="text-gray-400" size={14} />
+                  <input
+                    type="text"
+                    value={sharePassword}
+                    onChange={(e) => setSharePassword(e.target.value)}
+                    placeholder="Password / secret (optional)"
+                    className="w-40 px-2 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Zap size={12} />
+                    <span>Gen</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copySharePassword}
+                    disabled={!sharePassword}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Copy size={12} />
+                    <span>{copiedPassword ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                {/* Link controls */}
+                <div className="flex items-center gap-2">
+                  {shareUrl && (
+                    <input
+                      type="text"
+                      value={shareUrl}
+                      readOnly
+                      className="hidden md:block w-52 px-2 py-1 bg-white border border-green-200 rounded text-[11px] font-mono"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleShareReferral}
+                    disabled={isSharing}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isSharing ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        Creating…
+                      </>
+                    ) : (
+                      <>
+                        <Share2 size={12} />
+                        {shareUrl ? 'Refresh link' : 'Create link'}
+                      </>
+                    )}
+                  </button>
+                  {shareUrl && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={copyShareUrl}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                      >
+                        {copiedShareUrl ? (
+                          <>
+                            <CheckCircle2 size={12} />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            Link
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = shareUrl;
+                          if (!url) return;
+                          const subject = encodeURIComponent('Secure referral link');
+                          const bodyLines = [
+                            'Here is your secure referral link:',
+                            '',
+                            url,
+                            '',
+                            sharePassword
+                              ? `Password / Secret key: ${sharePassword}`
+                              : 'This link is not password protected.',
+                            '',
+                            'Please keep this information confidential.',
+                          ];
+                          const body = encodeURIComponent(bodyLines.join('\n'));
+                          window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                      >
+                        <Share2 size={12} />
+                        Email
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Share Referral Modal */}
-      {showShareModal && referralDraft && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Share Referral</h2>
-              <button
-                onClick={() => {
-                  setShowShareModal(false);
-                  setShareError(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="px-6 py-4 space-y-4">
-              {!shareUrl ? (
-                <>
-                  <p className="text-sm text-gray-600">
-                    Create a shareable link for this referral. You can optionally protect it with a password.
-                  </p>
-
-                  <div>
-                    <label htmlFor="share-password" className="block text-sm font-medium text-gray-700 mb-2">
-                      Password (Optional)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <Lock className="text-gray-400" size={18} />
-                      <input
-                        id="share-password"
-                        type="password"
-                        value={sharePassword}
-                        onChange={(e) => setSharePassword(e.target.value)}
-                        placeholder="Leave empty for no password"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      If set, recipients will need this password to view the referral.
-                    </p>
-                  </div>
-
-                  {shareError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
-                      {shareError}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-end gap-3 pt-2">
-                    <button
-                      onClick={() => {
-                        setShowShareModal(false);
-                        setShareError(null);
-                        setSharePassword('');
-                      }}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleShareReferral}
-                      disabled={isSharing}
-                      className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                    >
-                      {isSharing ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        <>
-                          <Share2 size={16} />
-                          Create Share Link
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle2 className="text-green-600" size={20} />
-                      <span className="text-sm font-semibold text-green-900">Share link created!</span>
-                    </div>
-                    <p className="text-xs text-green-700 mb-3">
-                      Copy the link below to share this referral. {sharePassword && 'The link is password protected.'}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={shareUrl}
-                        readOnly
-                        className="flex-1 px-3 py-2 bg-white border border-green-200 rounded text-sm font-mono"
-                      />
-                      <button
-                        onClick={copyShareUrl}
-                        className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-2 text-sm"
-                      >
-                        {copiedShareUrl ? (
-                          <>
-                            <CheckCircle2 size={16} />
-                            Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={16} />
-                            Copy
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end">
-                    <button
-                      onClick={() => {
-                        setShowShareModal(false);
-                        setShareUrl(null);
-                        setSharePassword('');
-                      }}
-                      className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
