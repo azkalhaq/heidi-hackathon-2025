@@ -3,10 +3,13 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, ChevronDown, MoreHorizontal } from 'lucide-react';
 
+type TaskActionType = 'Action' | 'Communicate' | 'Coordinate' | 'Document' | 'Order';
+
 interface Task {
   id: string;
   text: string;
   completed: boolean;
+  actionType: TaskActionType;
 }
 
 interface VoiceLogEntry {
@@ -37,6 +40,7 @@ export default function TasksPanel({
   const [newTaskText, setNewTaskText] = useState('');
   const [activeTab, setActiveTab] = useState<'tasks' | 'voice'>('tasks');
   const [automationMessage, setAutomationMessage] = useState<string | null>(null);
+  const [openActionTaskId, setOpenActionTaskId] = useState<string | null>(null);
 
   // Extract tasks from note content
   useEffect(() => {
@@ -112,6 +116,7 @@ export default function TasksPanel({
               id: `extracted-${Date.now()}-${Math.random()}`,
               text,
               completed: false,
+              actionType: 'Coordinate',
             });
           }
         }
@@ -174,6 +179,7 @@ export default function TasksPanel({
               id: `pattern-${Date.now()}-${Math.random()}`,
               text: fullText,
               completed: false,
+              actionType: 'Coordinate',
             });
           }
         }
@@ -198,6 +204,7 @@ export default function TasksPanel({
           id: `manual-${Date.now()}-${Math.random()}`,
           text: newTaskText.trim(),
           completed: false,
+          actionType: 'Coordinate',
         },
       ]);
       setNewTaskText('');
@@ -210,6 +217,15 @@ export default function TasksPanel({
         task.id === taskId ? { ...task, completed: !task.completed } : task,
       ),
     );
+  };
+
+  const handleSelectActionType = (taskId: string, actionType: TaskActionType) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId ? { ...task, actionType } : task,
+      ),
+    );
+    setOpenActionTaskId(null);
   };
 
   const simulateAutomateAllTasks = () => {
@@ -325,7 +341,7 @@ export default function TasksPanel({
                   <div
                     key={task.id}
                     onClick={() => handleToggleTask(task.id)}
-                    className="border border-gray-200 rounded-xl p-3 cursor-pointer group hover:border-purple-300 hover:bg-purple-50/40 transition-colors"
+                    className="border border-gray-200 rounded-xl p-3 cursor-pointer group hover:border-purple-300 hover:bg-purple-50/40 transition-colors relative"
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 flex-shrink-0">
@@ -371,18 +387,46 @@ export default function TasksPanel({
                             <MoreHorizontal size={16} />
                           </button>
                         </div>
-                        <div className="mt-2">
+                        <div className="mt-2 relative inline-block">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              // Placeholder for coordinate action handler
+                              setOpenActionTaskId(
+                                openActionTaskId === task.id ? null : task.id,
+                              );
                             }}
                             className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium px-3 py-1 border border-purple-100 hover:bg-purple-100 hover:border-purple-200"
                           >
-                            <span>Coordinate</span>
+                            <span>{task.actionType}</span>
                             <ChevronDown size={12} />
                           </button>
+                          {openActionTaskId === task.id && (
+                            <div className="absolute z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg py-1">
+                              {(['Action', 'Communicate', 'Coordinate', 'Document', 'Order'] as TaskActionType[]).map(
+                                (option) => (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectActionType(task.id, option);
+                                    }}
+                                    className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
+                                      task.actionType === option
+                                        ? 'bg-purple-50 text-purple-700'
+                                        : 'text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <span>{option}</span>
+                                    {task.actionType === option && (
+                                      <span className="text-[10px]">✓</span>
+                                    )}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
