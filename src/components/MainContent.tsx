@@ -206,8 +206,12 @@ export default function MainContent({
   const [referralDraft, setReferralDraft] = useState<ReferralDraft | null>(null);
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false);
   const [referralGenerationError, setReferralGenerationError] = useState<string | null>(null);
+  const [isGeneratingPrescription, setIsGeneratingPrescription] = useState(false);
+  const [prescriptionDraft, setPrescriptionDraft] = useState<string | null>(null);
+  const [prescriptionGenerationError, setPrescriptionGenerationError] = useState<string | null>(null);
+  const [prescriptionReasoning, setPrescriptionReasoning] = useState<string | null>(null);
   const [showVoiceCommands, setShowVoiceCommands] = useState(false);
-  const [activeTab, setActiveTab] = useState<'context' | 'transcript' | 'note'>('note');
+  const [activeTab, setActiveTab] = useState<'context' | 'transcript' | 'note' | 'prescription'>('note');
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharePassword, setSharePassword] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -216,7 +220,11 @@ export default function MainContent({
   const [copiedShareUrl, setCopiedShareUrl] = useState(false);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const timelineSummary = useMemo(() => {
-    const events: { date: string; label: string; source: 'prechart' | 'emr' | 'session' }[] = [];
+    const events: {
+      date: string;
+      label: string;
+      source: 'prechart' | 'emr' | 'session';
+    }[] = [];
 
     if (prechart?.pastEncounters) {
       for (const enc of prechart.pastEncounters) {
@@ -260,6 +268,8 @@ export default function MainContent({
       .map((e) => `- ${e.date} | ${e.source} | ${e.label}`);
     return lines.length ? lines.join('\n') : null;
   }, [prechart, emrSnapshot, sessionDetails]);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isPrescriptionAcknowledged, setIsPrescriptionAcknowledged] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
 
   const noteContent =
@@ -430,6 +440,55 @@ export default function MainContent({
   const handleOpenEmrSnapshot = () => {
     setIsEmrPanelOpen(true);
   };
+
+  const generatePrescription = useCallback(
+    async (patientName: string, noteContent: string) => {
+      if (!noteContent || noteContent === 'No consult note is available yet.') {
+        setVoiceError(
+          'No consult note is available yet to generate a prescription from.',
+        );
+        return;
+      }
+
+      setIsGeneratingPrescription(true);
+      setPrescriptionGenerationError(null);
+      setPrescriptionReasoning(null);
+      try {
+        const response = await fetch('/api/generate-prescription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            noteContent,
+            patientName,
+            emrSnapshot: emrSnapshot || null,
+          }),
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to generate prescription text');
+        }
+
+        setPrescriptionDraft(payload.prescriptionText ?? '');
+        if (payload.reasoning && typeof payload.reasoning === 'string') {
+          setPrescriptionReasoning(payload.reasoning);
+        }
+      } catch (err) {
+        console.error('[Prescription Generation] Failed', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to generate prescription text.';
+        setPrescriptionGenerationError(message);
+        setVoiceError(message);
+      } finally {
+        setIsGeneratingPrescription(false);
+      }
+    },
+    [emrSnapshot],
+  );
 
   const generateReferral = useCallback(async (
     service: string,
@@ -660,6 +719,22 @@ export default function MainContent({
         return;
       }
       if (
+        looseMatch(lc, [
+          'generate prescription',
+          'new prescription',
+          'write prescription',
+          'create prescription',
+          'start prescription',
+        ])
+      ) {
+        void generatePrescription(effectivePatientName, noteContent);
+        pushVoiceLog(
+          'Prescription draft generated',
+          'Generated a draft prescription from the consult note (requires clinician review before use).',
+        );
+        return;
+      }
+      if (
         looseMatch(lc, ['send summary', 'send note', 'email', 'message patient', 'send letter'])
       ) {
         pushVoiceLog(
@@ -696,9 +771,9 @@ export default function MainContent({
         return;
       }
 
-      setVoiceError('Voice command not recognized. Try: "pre chart", "fetch EMR", "start referral", or "automate tasks".');
+      setVoiceError('Voice command not recognized. Try: "pre chart", "fetch EMR", "start referral", "generate prescription", or "automate tasks".');
     },
-    [fetchEmrSnapshot, fetchPrechart, noteContent, effectivePatientName, prechart?.reasonForVisit, generateReferral, onAutomateAllTasksRequest],
+    [fetchEmrSnapshot, fetchPrechart, noteContent, effectivePatientName, prechart?.reasonForVisit, generateReferral, generatePrescription, onAutomateAllTasksRequest],
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -1031,18 +1106,6 @@ export default function MainContent({
                 )}
               </div>
             </div>
-             <button
-               onClick={handleOpenEmrSnapshot}
-               className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg transition-colors text-sm"
-             >
-               <Loader2
-                 size={14}
-                 className={`${
-                   isEmrLoading ? 'opacity-100 animate-spin' : 'opacity-0'
-                 } transition-opacity`}
-               />
-               <span>{isEmrLoading ? 'Fetching EMR…' : 'EMR Snapshot'}</span>
-             </button>
           </div>
           <div className="flex items-center gap-6 text-sm text-gray-600">
             <div className="flex items-center gap-1.5">
@@ -1094,24 +1157,142 @@ export default function MainContent({
             <Pencil size={14} />
             <span>Note</span>
             </button>
+            {isPrescriptionAcknowledged && (
+              <button
+                onClick={() => setActiveTab('prescription')}
+                className={`py-3 transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'prescription'
+                    ? 'text-blue-600 border-b-2 border-blue-600 font-medium'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Pill size={14} />
+                <span>Prescription</span>
+              </button>
+            )}
           </div>
-          <button
-            onClick={() => {
-              if (noteContent !== 'No consult note is available yet.' && effectivePatientName !== 'No session selected') {
-                void generateReferral('Specialist clinic', effectivePatientName, noteContent);
-              }
-            }}
-            disabled={isGeneratingReferral || noteContent === 'No consult note is available yet.' || effectivePatientName === 'No session selected'}
-            className="inline-flex items-center gap-2 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium py-1.5 px-3 rounded-lg transition-colors text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed"
-          >
-            <Loader2
-              size={14}
-              className={`${
-                isGeneratingReferral ? 'opacity-100 animate-spin' : 'opacity-0'
-              } transition-opacity`}
-            />
-            <span>{isGeneratingReferral ? 'Generating…' : 'Generate Referral'}</span>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsActionMenuOpen((open) => !open)}
+              className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg transition-colors text-sm"
+            >
+              <Zap size={14} className="text-purple-500" />
+              <span>Heidi Actions</span>
+              <ChevronDown size={14} />
+            </button>
+            {isActionMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-lg py-1 z-30">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionMenuOpen(false);
+                    if (isVoiceActive) {
+                      stopVoiceRecognition();
+                    } else {
+                      startVoiceRecognition();
+                    }
+                  }}
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <span className="flex items-center gap-2">
+                    <Mic size={14} className="text-purple-500" />
+                    <span>{isVoiceActive ? 'Stop Voice Control' : 'Activate Vocal Context'}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isEmrLoading}
+                  onClick={() => {
+                    setIsActionMenuOpen(false);
+                    handleOpenEmrSnapshot();
+                    void fetchEmrSnapshot();
+                  }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
+                    isEmrLoading
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Activity size={14} className="text-purple-500" />
+                    <span>View EMR Snapshot</span>
+                  </span>
+                  {isEmrLoading && (
+                    <Loader2 size={12} className="animate-spin text-purple-500" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    isGeneratingReferral ||
+                    noteContent === 'No consult note is available yet.' ||
+                    effectivePatientName === 'No session selected'
+                  }
+                  onClick={() => {
+                    if (
+                      noteContent !== 'No consult note is available yet.' &&
+                      effectivePatientName !== 'No session selected'
+                    ) {
+                      setIsActionMenuOpen(false);
+                      void generateReferral(
+                        'Specialist clinic',
+                        effectivePatientName,
+                        noteContent,
+                      );
+                    }
+                  }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
+                    isGeneratingReferral ||
+                    noteContent === 'No consult note is available yet.' ||
+                    effectivePatientName === 'No session selected'
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <FileText size={14} className="text-indigo-500" />
+                    <span>Generate Referral</span>
+                  </span>
+                  {isGeneratingReferral && (
+                    <Loader2 size={12} className="animate-spin text-indigo-500" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    isGeneratingPrescription ||
+                    noteContent === 'No consult note is available yet.' ||
+                    effectivePatientName === 'No session selected'
+                  }
+                  onClick={() => {
+                    if (
+                      noteContent !== 'No consult note is available yet.' &&
+                      effectivePatientName !== 'No session selected'
+                    ) {
+                      setIsActionMenuOpen(false);
+                      void generatePrescription(effectivePatientName, noteContent);
+                    }
+                  }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
+                    isGeneratingPrescription ||
+                    noteContent === 'No consult note is available yet.' ||
+                    effectivePatientName === 'No session selected'
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Pill size={14} className="text-emerald-500" />
+                    <span>Generate Prescription</span>
+                  </span>
+                  {isGeneratingPrescription && (
+                    <Loader2 size={12} className="animate-spin text-emerald-500" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Note Actions - Only show when Note tab is active */}
@@ -1671,6 +1852,101 @@ export default function MainContent({
         error={emrError}
         data={emrSnapshot}
       />
+      {prescriptionDraft && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setPrescriptionDraft(null);
+              setPrescriptionGenerationError(null);
+            }
+          }}
+        >
+          <div className="relative w-full max-w-5xl max-h-[90vh] rounded-2xl bg-white shadow-2xl border border-emerald-100 flex flex-col">
+            <div className="flex-shrink-0 px-8 pt-8 pb-4 border-b border-gray-200">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrescriptionDraft(null);
+                  setPrescriptionGenerationError(null);
+                }}
+                className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 text-sm z-10"
+              >
+                Close
+              </button>
+              <div>
+                <p className="text-xs font-semibold uppercase text-emerald-600 tracking-wide">
+                  Review prescription
+                </p>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Draft Prescription
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Generated from consult note. The prescribing clinician must review and
+                  approve this text before use.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-8">
+              <div className="space-y-3 text-sm pb-4">
+                {prescriptionGenerationError && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg text-xs">
+                    {prescriptionGenerationError}
+                  </div>
+                )}
+                <div className="mt-2 border border-gray-200 rounded-xl bg-gray-50">
+                  <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-700">
+                      Prescription body
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      Draft generated from consult note — editable
+                    </span>
+                  </div>
+                  <div className="px-4 py-3 text-sm leading-relaxed text-gray-800 bg-white border-t border-gray-100">
+                    <div className="mb-2 text-xs text-gray-500">
+                      <TypingText key={prescriptionDraft?.slice(0, 50) ?? ''} text={prescriptionDraft ?? ''} />
+                    </div>
+                    <textarea
+                      className="mt-2 w-full border border-gray-200 rounded-md px-2 py-2 text-sm font-mono text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent min-h-[220px] max-h-[420px] overflow-y-auto"
+                      value={prescriptionDraft ?? ''}
+                      onChange={(e) => setPrescriptionDraft(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <label className="mt-3 flex items-start gap-2 text-xs text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    checked={isPrescriptionAcknowledged}
+                    onChange={(e) => setIsPrescriptionAcknowledged(e.target.checked)}
+                  />
+                  <span>
+                    The prescribing clinician has reviewed this draft, confirmed that it
+                    is accurate for the patient, and will issue the final prescription
+                    through the appropriate prescribing system.
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex-shrink-0 px-8 py-3 border-top border-gray-200 bg-white flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrescriptionDraft(null);
+                  setPrescriptionGenerationError(null);
+                }}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {(referralDraft || isGeneratingReferral) && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
