@@ -278,6 +278,15 @@ export default function PreVisitSummary({ sessionId, appointmentId, onClose }: P
                 const ocrResult = preVisitData.uploads.ocrResults.find(
                   (ocr) => ocr.imageId === image.id
                 );
+
+                const hasStructuredData =
+                  !!(
+                    ocrResult?.structuredData?.impression ||
+                    ocrResult?.structuredData?.findings ||
+                    ocrResult?.structuredData?.measurements ||
+                    ocrResult?.structuredData?.radiologistComments
+                  );
+
                 return (
                   <div
                     key={image.id}
@@ -328,7 +337,7 @@ export default function PreVisitSummary({ sessionId, appointmentId, onClose }: P
                             </p>
                           </div>
                         )}
-                        {!ocrResult.structuredData && (
+                        {!hasStructuredData && ocrResult.extractedText && (
                           <div>
                             <p className="text-xs font-medium text-gray-700 mb-1">Extracted Text:</p>
                             <p className="text-sm text-gray-600 bg-white p-2 rounded border border-gray-200 whitespace-pre-wrap max-h-32 overflow-y-auto">
