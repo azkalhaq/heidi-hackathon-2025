@@ -5,7 +5,7 @@ import { referralStore } from '@/lib/referralStore';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { referralLetter, emrSnapshot, patientName, service, notePreview, password } = body;
+    const { referralLetter, emrSnapshot, patientName, service, notePreview, password, timelineSummary } = body;
 
     if (!referralLetter) {
       return NextResponse.json(
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       patientName: patientName || 'Unknown patient',
       service: service || 'Specialist clinic',
       notePreview: notePreview || '',
+      timelineSummary: timelineSummary || null,
       password: password || '',
       createdAt: new Date(),
     });
