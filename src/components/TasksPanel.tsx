@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, ChevronDown, MoreHorizontal } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -22,6 +22,7 @@ interface TasksPanelProps {
   noteContent: string | null;
   voiceLog: VoiceLogEntry[];
   onClearVoiceLog: () => void;
+  automationSignal?: number;
 }
 
 export default function TasksPanel({
@@ -30,10 +31,12 @@ export default function TasksPanel({
   noteContent,
   voiceLog,
   onClearVoiceLog,
+  automationSignal,
 }: TasksPanelProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskText, setNewTaskText] = useState('');
   const [activeTab, setActiveTab] = useState<'tasks' | 'voice'>('tasks');
+  const [automationMessage, setAutomationMessage] = useState<string | null>(null);
 
   // Extract tasks from note content
   useEffect(() => {
@@ -209,11 +212,34 @@ export default function TasksPanel({
     );
   };
 
+  const simulateAutomateAllTasks = () => {
+    if (!tasks.length) return;
+
+    const pendingCount = tasks.filter((t) => !t.completed).length;
+    if (pendingCount === 0) {
+      setAutomationMessage('All tasks are already completed.');
+      setTimeout(() => setAutomationMessage(null), 3000);
+      return;
+    }
+
+    setTasks(tasks.map((task) => ({ ...task, completed: true })));
+    setAutomationMessage(`Simulated automation for ${pendingCount} task${pendingCount > 1 ? 's' : ''}.`);
+    setTimeout(() => setAutomationMessage(null), 4000);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleAddTask();
     }
   };
+
+  // Respond to external automation requests (e.g., from voice control)
+  useEffect(() => {
+    if (automationSignal === undefined) return;
+    if (automationSignal <= 0) return;
+    // Each change in automationSignal represents a new automation request
+    simulateAutomateAllTasks();
+  }, [automationSignal]);
 
   return (
     <div
@@ -278,50 +304,89 @@ export default function TasksPanel({
               </div>
             ) : (
               <div className="space-y-3">
-                {tasks.map((task) => (
-                  <label
-                    key={task.id}
-                    className="flex items-start gap-3 cursor-pointer group hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs uppercase tracking-wide text-gray-500">
+                    Extracted tasks
+                  </span>
+                  <button
+                    type="button"
+                    onClick={simulateAutomateAllTasks}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-purple-600 text-white text-[11px] font-medium px-3 py-1 hover:bg-purple-700 shadow-sm"
                   >
-                    <div className="mt-0.5 flex-shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={task.completed}
-                        onChange={() => handleToggleTask(task.id)}
-                        className="sr-only"
-                      />
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          task.completed
-                            ? 'bg-purple-600 border-purple-600'
-                            : 'border-gray-300 group-hover:border-purple-400'
-                        }`}
-                      >
-                        {task.completed && (
-                          <svg
-                            className="w-3 h-3 text-white"
-                            fill="none"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                    <span>Automate all</span>
+                  </button>
+                </div>
+                {automationMessage && (
+                  <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 rounded-md px-2 py-1">
+                    {automationMessage}
+                  </div>
+                )}
+                {tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    onClick={() => handleToggleTask(task.id)}
+                    className="border border-gray-200 rounded-xl p-3 cursor-pointer group hover:border-purple-300 hover:bg-purple-50/40 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex-shrink-0">
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            task.completed
+                              ? 'bg-purple-600 border-purple-600'
+                              : 'border-gray-300 group-hover:border-purple-400'
+                          }`}
+                        >
+                          {task.completed && (
+                            <svg
+                              className="w-3 h-3 text-white"
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <p
+                            className={`text-sm flex-1 ${
+                              task.completed
+                                ? 'text-gray-400 line-through'
+                                : 'text-gray-900'
+                            }`}
                           >
-                            <path d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
+                            {task.text}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-gray-400 hover:text-gray-600 p-1"
+                            aria-label="More actions"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                        </div>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Placeholder for coordinate action handler
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium px-3 py-1 border border-purple-100 hover:bg-purple-100 hover:border-purple-200"
+                          >
+                            <span>Coordinate</span>
+                            <ChevronDown size={12} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <span
-                      className={`text-sm flex-1 ${
-                        task.completed
-                          ? 'text-gray-400 line-through'
-                          : 'text-gray-900'
-                      }`}
-                    >
-                      {task.text}
-                    </span>
-                  </label>
+                  </div>
                 ))}
               </div>
             )}
