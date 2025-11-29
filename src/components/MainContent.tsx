@@ -25,8 +25,12 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  Share2,
+  X,
+  Lock,
 } from 'lucide-react';
 import EmrSnapshotPanel from '@/components/EmrSnapshotPanel';
+import EmrSnapshotVisual from '@/components/EmrSnapshotVisual';
 import type { EmrSnapshotData } from '@/types/emr';
 import type { PrechartData } from '@/types/prechart';
 
@@ -72,6 +76,7 @@ interface ReferralDraft {
   reason: string;
   patientName: string;
   notePreview: string;
+  emrSnapshot?: EmrSnapshotData | null;
 }
 
 function looseMatch(text: string, patterns: string[]): boolean {
@@ -197,6 +202,12 @@ export default function MainContent({
   const [referralGenerationError, setReferralGenerationError] = useState<string | null>(null);
   const [showVoiceCommands, setShowVoiceCommands] = useState(false);
   const [activeTab, setActiveTab] = useState<'context' | 'transcript' | 'note'>('note');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharePassword, setSharePassword] = useState('');
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [copiedShareUrl, setCopiedShareUrl] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
 
   const noteContent =
@@ -345,14 +356,28 @@ export default function MainContent({
           noteContent,
           patientName,
           service,
-          prechart: prechart || undefined,
+          prechart: prechart || null,
+          emrSnapshot: emrSnapshot || null,
         }),
       });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error ?? 'Failed to generate referral letter');
       }
-      setReferralDraft({
+      // Use the EMR snapshot from state (what we sent) or from payload (what was returned)
+      // If neither exists, use mock data for demo purposes
+      const finalEmrSnapshot = emrSnapshot || payload.emrSnapshot || getMockEmrSnapshotData();
+      
+      console.log('[Referral Generation] EMR Snapshot:', {
+        fromState: emrSnapshot,
+        fromPayload: payload.emrSnapshot,
+        final: finalEmrSnapshot,
+        patientName,
+        hasProblems: finalEmrSnapshot?.problems?.length,
+        hasMeds: finalEmrSnapshot?.medications?.length,
+      });
+
+      const draftData = {
         service,
         reason: payload.referralLetter || GENERIC_REFERRAL_TEMPLATE,
         patientName,
@@ -360,12 +385,18 @@ export default function MainContent({
           noteContent !== 'No consult note is available yet.'
             ? noteContent.slice(0, 400)
             : '',
-      });
+        emrSnapshot: finalEmrSnapshot,
+      };
+      
+      console.log('[Referral Generation] Setting draft with EMR snapshot:', draftData.emrSnapshot);
+      setReferralDraft(draftData);
     } catch (err) {
       setReferralGenerationError(
         err instanceof Error ? err.message : 'Unknown error generating referral',
       );
       // Fallback to template if generation fails
+      // Still include EMR snapshot if available
+      const fallbackEmrSnapshot = emrSnapshot || getMockEmrSnapshotData();
       setReferralDraft({
         service,
         reason: GENERIC_REFERRAL_TEMPLATE,
@@ -374,11 +405,56 @@ export default function MainContent({
           noteContent !== 'No consult note is available yet.'
             ? noteContent.slice(0, 400)
             : '',
+        emrSnapshot: fallbackEmrSnapshot,
       });
     } finally {
       setIsGeneratingReferral(false);
     }
-  }, [prechart]);
+  }, [prechart, emrSnapshot, noteContent]);
+
+  const handleShareReferral = async () => {
+    if (!referralDraft) return;
+
+    setIsSharing(true);
+    setShareError(null);
+
+    try {
+      const response = await fetch('/api/referral/share', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          referralLetter: referralDraft.reason,
+          emrSnapshot: referralDraft.emrSnapshot,
+          patientName: referralDraft.patientName,
+          service: referralDraft.service,
+          notePreview: referralDraft.notePreview,
+          password: sharePassword || undefined,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to create shareable link');
+      }
+
+      setShareUrl(payload.shareUrl);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Failed to share referral');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const copyShareUrl = () => {
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopiedShareUrl(true);
+      setTimeout(() => setCopiedShareUrl(false), 2000);
+    }
+  };
 
   useEffect(() => {
     setEmrSnapshot(null);
@@ -598,7 +674,7 @@ export default function MainContent({
 
   return (
     <>
-      <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
+    <div className="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
       {isVoiceActive && (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center mt-4">
           <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-white/90 px-4 py-2 shadow-lg border border-purple-200">
@@ -719,8 +795,8 @@ export default function MainContent({
             ) : (
               <Mic size={18} />
             )}
-            <span>Transcribe</span>
-          </button>
+              <span>Transcribe</span>
+            </button>
           <div className="flex items-center gap-2 text-gray-600">
             <span className="font-mono text-sm">00:00</span>
             <div className="flex items-center gap-1">
@@ -822,8 +898,8 @@ export default function MainContent({
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              Context
-            </button>
+            Context
+          </button>
             <button
               onClick={() => setActiveTab('transcript')}
               className={`py-3 transition-colors flex items-center gap-1.5 ${
@@ -832,8 +908,8 @@ export default function MainContent({
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              Transcript
-            </button>
+            Transcript
+          </button>
             <button
               onClick={() => setActiveTab('note')}
               className={`py-3 transition-colors flex items-center gap-1.5 ${
@@ -842,8 +918,8 @@ export default function MainContent({
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <Pencil size={14} />
-              <span>Note</span>
+            <Pencil size={14} />
+            <span>Note</span>
             </button>
           </div>
           <button
@@ -867,36 +943,36 @@ export default function MainContent({
 
         {/* Note Actions - Only show when Note tab is active */}
         {activeTab === 'note' && (
-          <div className="px-6 py-3 border-t border-gray-200 bg-white flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                Select a template
-              </button>
-              <button className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-1.5 transition-colors">
-                <Pencil size={14} />
+        <div className="px-6 py-3 border-t border-gray-200 bg-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+              Select a template
+            </button>
+            <button className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-1.5 transition-colors">
+              <Pencil size={14} />
                 <span>{activeTemplate}</span>
-              </button>
-              <button className="text-gray-400 hover:text-gray-600 p-1">
-                <MoreVertical size={16} />
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="text-gray-400 hover:text-gray-600 p-2">
-                <Mic size={18} />
-              </button>
-              <button className="text-gray-400 hover:text-gray-600 p-2">
-                <Undo2 size={18} />
-              </button>
-              <button className="text-gray-400 hover:text-gray-600 p-2">
-                <Redo2 size={18} />
-              </button>
-              <button className="text-gray-400 hover:text-gray-600 px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 flex items-center gap-1.5 transition-colors">
-                <Copy size={16} />
-                <span>Copy</span>
-                <ChevronDown size={14} />
-              </button>
-            </div>
+            </button>
+            <button className="text-gray-400 hover:text-gray-600 p-1">
+              <MoreVertical size={16} />
+            </button>
           </div>
+          <div className="flex items-center gap-2">
+            <button className="text-gray-400 hover:text-gray-600 p-2">
+              <Mic size={18} />
+            </button>
+            <button className="text-gray-400 hover:text-gray-600 p-2">
+              <Undo2 size={18} />
+            </button>
+            <button className="text-gray-400 hover:text-gray-600 p-2">
+              <Redo2 size={18} />
+            </button>
+            <button className="text-gray-400 hover:text-gray-600 px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 flex items-center gap-1.5 transition-colors">
+              <Copy size={16} />
+              <span>Copy</span>
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        </div>
         )}
       </div>
 
@@ -944,12 +1020,12 @@ export default function MainContent({
                     </div>
                     <h2 className="text-lg font-semibold text-gray-900">
                       Visit context from EMR
-                    </h2>
+            </h2>
                     <p className="text-xs text-gray-500 mt-1">
                       Pulled from OpenEMR via desktop RPA. Read-only, no changes are made.
-                    </p>
-                  </div>
-                  <button
+            </p>
+          </div>
+              <button
                     onClick={fetchPrechart}
                     disabled={isPrechartLoading}
                     className="inline-flex items-center gap-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 font-medium py-1.5 px-3 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200"
@@ -1058,7 +1134,7 @@ export default function MainContent({
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                       <Activity className="text-purple-600" size={20} />
                       <div>
                         <div className="flex items-center gap-2">
@@ -1076,7 +1152,7 @@ export default function MainContent({
                               Live
                             </span>
                           )}
-                        </div>
+                </div>
                         <h2 className="text-lg font-semibold text-gray-900">
                           Current EMR Data
                         </h2>
@@ -1100,7 +1176,7 @@ export default function MainContent({
                       />
                       <Eye size={14} />
                       <span>{isEmrLoading ? 'Fetching…' : 'View Full'}</span>
-                    </button>
+              </button>
                     <button
                       onClick={() => void fetchEmrSnapshot()}
                       disabled={isEmrLoading}
@@ -1136,7 +1212,7 @@ export default function MainContent({
                               {emrSnapshot.problems.length}
                             </span>
                           </div>
-                          <button
+                  <button
                             onClick={handleOpenEmrSnapshot}
                             className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
                           >
@@ -1168,12 +1244,12 @@ export default function MainContent({
                                   title="Add to note"
                                 >
                                   <Plus size={14} />
-                                </button>
+                  </button>
                               </div>
                             </div>
                           ))}
                           {emrSnapshot.problems.length > 3 && (
-                            <button
+                  <button
                               onClick={handleOpenEmrSnapshot}
                               className="w-full text-xs text-purple-600 hover:text-purple-700 font-medium py-2 border border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
                             >
@@ -1200,7 +1276,7 @@ export default function MainContent({
                           >
                             <Eye size={12} />
                             View All
-                          </button>
+                  </button>
                         </div>
                         <div className="space-y-2">
                           {emrSnapshot.medications.slice(0, 3).map((med, idx) => (
@@ -1221,7 +1297,7 @@ export default function MainContent({
                                     {[med.dose, med.frequency].filter(Boolean).join(' · ') || 'No dose documented'}
                                   </div>
                                 </div>
-                                <button
+                  <button
                                   className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 hover:text-purple-700 p-1"
                                   title="Add to note"
                                 >
@@ -1258,7 +1334,7 @@ export default function MainContent({
                           >
                             <Eye size={12} />
                             View All
-                          </button>
+                  </button>
                         </div>
                         <div className="space-y-2">
                           {emrSnapshot.allergies.map((allergy, idx) => (
@@ -1278,9 +1354,9 @@ export default function MainContent({
                                   {allergy.reaction && (
                                     <div className="text-gray-700 text-xs ml-6">
                                       Reaction: <span className="font-medium">{allergy.reaction}</span>
-                                    </div>
-                                  )}
-                                </div>
+                </div>
+              )}
+            </div>
                                 <button
                                   className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-600 hover:text-purple-700 p-1"
                                   title="Add to note"
@@ -1301,13 +1377,13 @@ export default function MainContent({
                           No EMR data available. Click &quot;View EMR Snapshot&quot; to fetch from OpenEMR.
                         </p>
                       )}
-                  </div>
+          </div>
                 ) : (
                   <p className="text-xs text-gray-500">
                     No EMR snapshot loaded yet. Click &quot;View EMR Snapshot&quot; to fetch current patient data from OpenEMR.
                   </p>
                 )}
-              </div>
+        </div>
             </>
           )}
 
@@ -1321,8 +1397,8 @@ export default function MainContent({
                     <div className="h-4 bg-gray-200 rounded w-full" />
                     <div className="h-4 bg-gray-200 rounded w-5/6" />
                     <div className="h-4 bg-gray-200 rounded w-2/3" />
-                  </div>
-                </div>
+      </div>
+    </div>
               ) : (
                 <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
@@ -1399,15 +1475,15 @@ export default function MainContent({
             <div className="flex-shrink-0 px-8 pt-8 pb-4 border-b border-gray-200">
               <button
                 type="button"
-                onClick={() => {
+                    onClick={() => {
                   setReferralDraft(null);
                   setIsGeneratingReferral(false);
                   setReferralGenerationError(null);
-                }}
+                    }}
                 className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 text-sm z-10"
-              >
+                  >
                 Close
-              </button>
+                  </button>
               <div>
                 <p className="text-xs font-semibold uppercase text-indigo-600 tracking-wide">
                   Edit template
@@ -1436,7 +1512,7 @@ export default function MainContent({
                     <Loader2 size={32} className="animate-spin text-indigo-600 mx-auto mb-3" />
                     <p className="text-sm text-gray-600">Generating referral letter from consult note...</p>
                     <p className="text-xs text-gray-500 mt-1">This may take a few seconds</p>
-                  </div>
+            </div>
                 </div>
               )}
               {referralDraft && (
@@ -1467,6 +1543,19 @@ export default function MainContent({
                       <TypingText key={referralDraft.reason.slice(0, 50)} text={referralDraft.reason} />
                     </div>
                   </div>
+
+                  {/* EMR Snapshot Visualization */}
+                  {referralDraft.emrSnapshot ? (
+                    <div className="mt-6">
+                      <EmrSnapshotVisual emrSnapshot={referralDraft.emrSnapshot} />
+                    </div>
+                  ) : (
+                    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                      <p className="text-xs text-gray-500 text-center">
+                        No EMR snapshot data available. Fetch EMR snapshot from the Context tab to include patient data in the referral.
+            </p>
+          </div>
+                  )}
                 </>
               )}
 
@@ -1477,36 +1566,189 @@ export default function MainContent({
                   </label>
                   <div className="px-3 py-2 rounded-md border border-gray-200 bg-gray-50 text-gray-800 text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
                     {referralDraft.notePreview}
-                  </div>
-                </div>
+        </div>
+      </div>
               )}
 
+    </div>
+            </div>
+            <div className="flex-shrink-0 px-8 py-4 border-t border-gray-200 bg-white flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowShareModal(true)}
+                className="inline-flex items-center gap-2 rounded-md border border-purple-300 bg-white text-purple-700 text-sm font-medium px-4 py-2 hover:bg-purple-50 transition-colors"
+              >
+                <Share2 size={16} />
+                <span>Share</span>
+              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReferralDraft(null);
+                    setIsGeneratingReferral(false);
+                    setReferralGenerationError(null);
+                    setShowShareModal(false);
+                    setShareUrl(null);
+                    setSharePassword('');
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+                >
+                  <span>Cancel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // In production, this would send the referral to OpenEMR
+                    setReferralDraft(null);
+                    setIsGeneratingReferral(false);
+                    setReferralGenerationError(null);
+                    setShowShareModal(false);
+                    setShareUrl(null);
+                    setSharePassword('');
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 text-white text-sm font-semibold px-4 py-2 hover:bg-indigo-700 transition-colors"
+                >
+                  <span>Send Referral</span>
+                </button>
               </div>
             </div>
-            <div className="flex-shrink-0 px-8 py-4 border-t border-gray-200 bg-white flex items-center justify-end gap-3">
+          </div>
+        </div>
+      )}
+
+      {/* Share Referral Modal */}
+      {showShareModal && referralDraft && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">Share Referral</h2>
               <button
-                type="button"
                 onClick={() => {
-                  setReferralDraft(null);
-                  setIsGeneratingReferral(false);
-                  setReferralGenerationError(null);
+                  setShowShareModal(false);
+                  setShareError(null);
                 }}
-                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors"
               >
-                <span>Cancel</span>
+                <X size={20} />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // In production, this would send the referral to OpenEMR
-                  setReferralDraft(null);
-                  setIsGeneratingReferral(false);
-                  setReferralGenerationError(null);
-                }}
-                className="inline-flex items-center gap-2 rounded-md bg-indigo-600 text-white text-sm font-semibold px-4 py-2 hover:bg-indigo-700 transition-colors"
-              >
-                <span>Send Referral</span>
-              </button>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-4 space-y-4">
+              {!shareUrl ? (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Create a shareable link for this referral. You can optionally protect it with a password.
+                  </p>
+
+                  <div>
+                    <label htmlFor="share-password" className="block text-sm font-medium text-gray-700 mb-2">
+                      Password (Optional)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Lock className="text-gray-400" size={18} />
+                      <input
+                        id="share-password"
+                        type="password"
+                        value={sharePassword}
+                        onChange={(e) => setSharePassword(e.target.value)}
+                        placeholder="Leave empty for no password"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      If set, recipients will need this password to view the referral.
+                    </p>
+                  </div>
+
+                  {shareError && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
+                      {shareError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setShowShareModal(false);
+                        setShareError(null);
+                        setSharePassword('');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleShareReferral}
+                      disabled={isSharing}
+                      className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    >
+                      {isSharing ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <Share2 size={16} />
+                          Create Share Link
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="text-green-600" size={20} />
+                      <span className="text-sm font-semibold text-green-900">Share link created!</span>
+                    </div>
+                    <p className="text-xs text-green-700 mb-3">
+                      Copy the link below to share this referral. {sharePassword && 'The link is password protected.'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={shareUrl}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-white border border-green-200 rounded text-sm font-mono"
+                      />
+                      <button
+                        onClick={copyShareUrl}
+                        className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-2 text-sm"
+                      >
+                        {copiedShareUrl ? (
+                          <>
+                            <CheckCircle2 size={16} />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={16} />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => {
+                        setShowShareModal(false);
+                        setShareUrl(null);
+                        setSharePassword('');
+                      }}
+                      className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
