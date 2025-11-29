@@ -7,5 +7,6 @@ export const referralStore = new Map<string, {
   notePreview: string;
   password: string;
   createdAt: Date;
+  timelineSummary?: string | null;
 }>();
 

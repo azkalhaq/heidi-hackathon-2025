@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Mic,
   ChevronDown,
@@ -80,6 +80,7 @@ interface ReferralDraft {
   patientName: string;
   notePreview: string;
   emrSnapshot?: EmrSnapshotData | null;
+  timelineSummary?: string | null;
 }
 
 function looseMatch(text: string, patterns: string[]): boolean {
@@ -214,6 +215,51 @@ export default function MainContent({
   const [shareError, setShareError] = useState<string | null>(null);
   const [copiedShareUrl, setCopiedShareUrl] = useState(false);
   const [copiedPassword, setCopiedPassword] = useState(false);
+  const timelineSummary = useMemo(() => {
+    const events: { date: string; label: string; source: 'prechart' | 'emr' | 'session' }[] = [];
+
+    if (prechart?.pastEncounters) {
+      for (const enc of prechart.pastEncounters) {
+        if (enc.date && enc.summary) {
+          events.push({
+            date: enc.date,
+            label: `Encounter: ${enc.summary}`,
+            source: 'prechart',
+          });
+        }
+      }
+    }
+
+    if (emrSnapshot?.labs) {
+      for (const lab of emrSnapshot.labs) {
+        if (lab.date && lab.test) {
+          const value =
+            lab.value && lab.unit ? `${lab.value} ${lab.unit}` : lab.value || '';
+          events.push({
+            date: lab.date,
+            label: `Lab – ${lab.test}${value ? `: ${value}` : ''}`,
+            source: 'emr',
+          });
+        }
+      }
+    }
+
+    if (sessionDetails?.createdAt) {
+      events.push({
+        date: sessionDetails.createdAt,
+        label: 'Current visit (this Heidi session)',
+        source: 'session',
+      });
+    }
+
+    // Sort descending by date
+    events.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+    const lines = events
+      .slice(0, 8)
+      .map((e) => `- ${e.date} | ${e.source} | ${e.label}`);
+    return lines.length ? lines.join('\n') : null;
+  }, [prechart, emrSnapshot, sessionDetails]);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
 
   const noteContent =
@@ -404,6 +450,7 @@ export default function MainContent({
           service,
           prechart: prechart || null,
           emrSnapshot: emrSnapshot || null,
+          timelineSummary,
         }),
       });
       const payload = await response.json();
@@ -432,6 +479,7 @@ export default function MainContent({
             ? noteContent.slice(0, 400)
             : '',
         emrSnapshot: finalEmrSnapshot,
+        timelineSummary: timelineSummary || null,
       };
       
       console.log('[Referral Generation] Setting draft with EMR snapshot:', draftData.emrSnapshot);
@@ -454,6 +502,7 @@ export default function MainContent({
             ? noteContent.slice(0, 400)
             : '',
         emrSnapshot: fallbackEmrSnapshot,
+        timelineSummary: timelineSummary || null,
       });
       setShowShareModal(true);
     } finally {
@@ -935,7 +984,7 @@ export default function MainContent({
         {/* Session Details */}
         <div className="px-6 py-3 border-t border-gray-200">
           <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 {isEditingPatientName ? (
                   <>
@@ -970,14 +1019,14 @@ export default function MainContent({
                       className="text-gray-400 hover:text-gray-600"
                       onClick={() => setIsEditingPatientName(true)}
                     >
-                      <Pencil size={14} />
-                    </button>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <RefreshCw size={14} />
-                    </button>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <Trash2 size={14} />
-                    </button>
+                  <Pencil size={14} />
+                </button>
+                <button className="text-gray-400 hover:text-gray-600">
+                  <RefreshCw size={14} />
+                </button>
+                <button className="text-gray-400 hover:text-gray-600">
+                  <Trash2 size={14} />
+                </button>
                   </>
                 )}
               </div>
@@ -1286,7 +1335,7 @@ export default function MainContent({
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
               <button
                       onClick={handleOpenEmrSnapshot}
                       disabled={isEmrLoading}
@@ -1300,7 +1349,7 @@ export default function MainContent({
                       />
                       <Eye size={14} />
                       <span>{isEmrLoading ? 'Fetching…' : 'View Full'}</span>
-              </button>
+                    </button>
                     <button
                       onClick={() => void fetchEmrSnapshot()}
                       disabled={isEmrLoading}
@@ -1309,6 +1358,38 @@ export default function MainContent({
                     >
                       <RefreshCw size={14} className={isEmrLoading ? 'animate-spin' : ''} />
                     </button>
+                    {/* Quick links to external EMR portals (open in new tab) */}
+                    <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-500 ml-1">
+                      <span className="mr-1">Open EMR:</span>
+                      <button
+                        type="button"
+                        onClick={() => window.open('https://www.open-emr.org/', '_blank')}
+                        className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                      >
+                        OpenEMR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open('https://www.epic.com/', '_blank')}
+                        className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                      >
+                        Epic
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open('https://www.oracle.com/health/cerner/', '_blank')}
+                        className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                      >
+                        Cerner
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open('https://www.allscripts.com/', '_blank')}
+                        className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                      >
+                        Allscripts
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1689,6 +1770,82 @@ export default function MainContent({
                 </>
               )}
 
+              {referralDraft?.timelineSummary && (
+                <div className="mt-3 border border-gray-200 rounded-lg bg-gray-50 px-3 py-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-1">
+                    Patient timeline (EMR & pre-visit context)
+                  </p>
+                  <p className="text-[11px] text-gray-500 mb-2">
+                    Chronological view of EMR events and labs leading up to this consultation.
+                  </p>
+                  <ol className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {referralDraft.timelineSummary.split('\n').map((line) => {
+                      const trimmed = line.replace(/^-\\s*/, '').trim();
+                      if (!trimmed) return null;
+                      const parts = trimmed.split('|').map((p) => p.trim());
+                      const datePart = parts[0] ?? '';
+                      const sourcePart = (parts[1] ?? '').toLowerCase();
+                      const label = parts.slice(2).join(' | ').replace(/^:+/, '').trim();
+
+                      let sourceLabel = 'EMR';
+                      let sourceUrl: string | null = null;
+                      let sourceColor = 'bg-gray-100 text-gray-700';
+
+                      if (sourcePart === 'prechart') {
+                        sourceLabel = 'Pre-chart EMR';
+                        sourceUrl = 'https://www.open-emr.org/';
+                        sourceColor = 'bg-blue-50 text-blue-700';
+                      } else if (sourcePart === 'emr') {
+                        sourceLabel = 'EMR Snapshot';
+                        sourceUrl = 'https://www.open-emr.org/';
+                        sourceColor = 'bg-green-50 text-green-700';
+                      } else if (sourcePart === 'session') {
+                        sourceLabel = 'Heidi Session';
+                        sourceUrl = null;
+                        sourceColor = 'bg-purple-50 text-purple-700';
+                      }
+                      return (
+                        <li key={line} className="flex items-start gap-2 text-[11px] text-gray-700">
+                          <div className="mt-0.5 h-1.5 w-1.5 rounded-full bg-indigo-500 flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-gray-900 text-[11px]">
+                              {datePart}
+                            </p>
+                            {label && (
+                              <p className="text-[11px] text-gray-600">
+                                {label}
+                              </p>
+                            )}
+                            <div className="mt-0.5">
+                  <button
+                                type="button"
+                    onClick={() => {
+                                  if (sourceUrl) {
+                                    window.open(sourceUrl, '_blank');
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-transparent ${
+                                  sourceUrl
+                                    ? `${sourceColor} hover:brightness-95 cursor-pointer`
+                                    : `${sourceColor} cursor-default`
+                                }`}
+                              >
+                                <span>{sourceLabel}</span>
+                                {sourceUrl && (
+                                  <span className="text-[9px] underline">
+                                    Open
+                                  </span>
+                    )}
+                  </button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+
               {referralDraft?.notePreview && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">
@@ -1704,9 +1861,9 @@ export default function MainContent({
             </div>
             {/* Footer with Close + Sharing controls */}
             <div className="flex-shrink-0 px-8 py-3 border-t border-gray-200 bg-white flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <button
+                  <button
                 type="button"
-                onClick={() => {
+                    onClick={() => {
                   setReferralDraft(null);
                   setIsGeneratingReferral(false);
                   setReferralGenerationError(null);
@@ -1775,7 +1932,7 @@ export default function MainContent({
                   </button>
                   {shareUrl && (
                     <>
-                      <button
+                  <button
                         type="button"
                         onClick={copyShareUrl}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
@@ -1794,7 +1951,7 @@ export default function MainContent({
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
+                    onClick={() => {
                           const url = shareUrl;
                           if (!url) return;
                           const subject = encodeURIComponent('Secure referral link');
@@ -1816,14 +1973,14 @@ export default function MainContent({
                       >
                         <Share2 size={12} />
                         Email
-                      </button>
+                  </button>
                     </>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
+      </div>
+    </div>
       )}
 
     </>

@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { noteContent, patientName, service, prechart, emrSnapshot } = body;
+    const { noteContent, patientName, service, prechart, emrSnapshot, timelineSummary } = body;
 
     if (!noteContent || typeof noteContent !== 'string') {
       return NextResponse.json(
@@ -78,6 +78,8 @@ ${prechart ? `\nADDITIONAL CONTEXT FROM EMR (Pre-chart):\n${JSON.stringify(prech
 
 ${emrSnapshot ? `\nCURRENT EMR SNAPSHOT DATA:\n${JSON.stringify(emrSnapshot, null, 2)}\n` : ''}
 
+${timelineSummary ? `\nPATIENT TIMELINE (most relevant events):\n${timelineSummary}\n` : ''}
+
 ${patientName ? `\nPatient name (for reference): ${patientName}\n` : ''}
 ${service ? `\nReferral service: ${service}\n` : ''}
 
@@ -121,6 +123,7 @@ Please fill in the template with information from the consult note. Omit any sec
     return NextResponse.json({ 
       referralLetter: generatedText,
       emrSnapshot: emrSnapshot || null,
+      timelineSummary: timelineSummary || null,
     });
   } catch (error) {
     console.error('[GENERATE REFERRAL API]', error);

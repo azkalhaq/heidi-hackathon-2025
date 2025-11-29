@@ -12,6 +12,7 @@ interface ReferralData {
   patientName: string;
   service: string;
   notePreview: string;
+  timelineSummary?: string | null;
 }
 
 export default function ReferralPage() {
@@ -217,6 +218,18 @@ export default function ReferralPage() {
           {referralData.emrSnapshot && (
             <div className="mt-8 pt-8 border-t border-gray-200">
               <EmrSnapshotVisual emrSnapshot={referralData.emrSnapshot} />
+            </div>
+          )}
+
+          {/* Patient Timeline */}
+          {referralData.timelineSummary && (
+            <div className="mt-8 pt-8 border-t border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Patient Timeline</h3>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <pre className="whitespace-pre-wrap text-xs text-gray-700">
+                  {referralData.timelineSummary}
+                </pre>
+              </div>
             </div>
           )}
 
