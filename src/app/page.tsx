@@ -16,7 +16,9 @@ export default function Home() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     DEFAULT_SESSION_IDS[0] ?? null,
   );
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
   const [noteContent, setNoteContent] = useState<string | null>(null);
+  const [taskAutomationSignal, setTaskAutomationSignal] = useState(0);
   const [voiceLog, setVoiceLog] = useState<
     { id: string; title: string; description: string; timestamp: string }[]
   >([]);
@@ -37,18 +39,29 @@ export default function Home() {
         isOpen={isSessionsPanelOpen} 
         onClose={() => setIsSessionsPanelOpen(false)} 
         selectedSessionId={selectedSessionId}
+        selectedAppointmentId={selectedAppointmentId}
         onSelectSession={(id) => {
           setSelectedSessionId(id);
+          setSelectedAppointmentId(null); // Clear appointment when selecting session
+          setIsSessionsPanelOpen(false);
+        }}
+        onSelectAppointment={(id) => {
+          setSelectedAppointmentId(id);
+          setSelectedSessionId(null); // Clear session when selecting appointment
           setIsSessionsPanelOpen(false);
         }}
       />
       <div className="flex-1 flex flex-col min-w-0 relative">
         <MainContent 
-          selectedSessionId={selectedSessionId} 
+          selectedSessionId={selectedSessionId}
+          selectedAppointmentId={selectedAppointmentId}
           onNoteContentChange={setNoteContent}
           onToggleTasksPanel={() => setIsTasksPanelOpen(!isTasksPanelOpen)}
           isTasksPanelOpen={isTasksPanelOpen}
           onVoiceLogChange={setVoiceLog}
+          onAutomateAllTasksRequest={() =>
+            setTaskAutomationSignal((prev) => prev + 1)
+          }
         />
         <BottomBar />
       </div>
@@ -58,6 +71,7 @@ export default function Home() {
         noteContent={noteContent}
         voiceLog={voiceLog}
         onClearVoiceLog={() => setVoiceLog([])}
+        automationSignal={taskAutomationSignal}
       />
     </div>
   );

@@ -11,6 +11,7 @@ import {
   User,
   X,
   Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface SessionListItem {
@@ -28,6 +29,8 @@ interface SessionsPanelProps {
   onClose: () => void;
   selectedSessionId?: string | null;
   onSelectSession?: (sessionId: string) => void;
+  onSelectAppointment?: (appointmentId: string) => void;
+  selectedAppointmentId?: string | null;
 }
 
 export default function SessionsPanel({
@@ -35,13 +38,37 @@ export default function SessionsPanel({
   onClose,
   selectedSessionId,
   onSelectSession,
+  onSelectAppointment,
+  selectedAppointmentId,
 }: SessionsPanelProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preVisitStatuses, setPreVisitStatuses] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<'sessions' | 'schedule'>('sessions');
+  const [scheduleSubTab, setScheduleSubTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
+
+  const checkPreVisitStatuses = async (sessionList: SessionListItem[]) => {
+    // Check which sessions have pre-visit forms
+    const statuses: Record<string, boolean> = {};
+    await Promise.all(
+      sessionList.map(async (session) => {
+        try {
+          const response = await fetch(`/api/pre-visit/submit?sessionId=${session.id}`);
+          if (response.ok) {
+            statuses[session.id] = true;
+          }
+        } catch {
+          // Session doesn't have pre-visit form
+          statuses[session.id] = false;
+        }
+      })
+    );
+    setPreVisitStatuses(statuses);
+  };
 
   useEffect(() => {
     const loadSessions = async () => {
@@ -53,7 +80,8 @@ export default function SessionsPanel({
         if (!response.ok) {
           throw new Error(payload.error ?? 'Failed to load sessions');
         }
-        setSessions(payload.sessions ?? []);
+        const loadedSessions = payload.sessions ?? [];
+        setSessions(loadedSessions);
         if (payload.failedSessions?.length) {
           const failedList = payload.failedSessions
             .map(
@@ -67,6 +95,11 @@ export default function SessionsPanel({
         } else {
           setError(null);
         }
+        // Check pre-visit statuses after sessions are loaded
+        await checkPreVisitStatuses(loadedSessions);
+        
+        // Load upcoming appointments (pre-visit forms without sessions)
+        await loadUpcomingAppointments();
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Unknown error loading sessions',
@@ -76,8 +109,27 @@ export default function SessionsPanel({
       }
     };
 
+    const loadUpcomingAppointments = async () => {
+      try {
+        const response = await fetch('/api/pre-visit/submit?listAll=true');
+        if (response.ok) {
+          const result = await response.json();
+          // Filter submissions that don't have a sessionId (upcoming appointments)
+          const upcoming = (result.submissions || []).filter(
+            (submission: any) => !submission.sessionId
+          );
+          setUpcomingAppointments(upcoming);
+        }
+      } catch (err) {
+        console.error('Failed to load upcoming appointments:', err);
+        setUpcomingAppointments([]);
+      }
+    };
+
     if (isOpen) {
       loadSessions();
+      // Also load upcoming appointments independently
+      loadUpcomingAppointments();
     }
   }, [isOpen]);
 
@@ -291,8 +343,16 @@ export default function SessionsPanel({
                               <User size={18} className="text-purple-700" />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-900 truncate">
-                                {session.patientName}
+                              <div className="flex items-center gap-2">
+                                <div className="font-medium text-gray-900 truncate">
+                                  {session.patientName}
+                                </div>
+                                {preVisitStatuses[session.id] && (
+                                  <span className="bg-green-100 text-green-700 text-[10px] font-medium px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <CheckCircle2 size={10} />
+                                    Pre-visit
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-3 text-xs text-gray-600 mt-1">
                                 <div className="flex items-center gap-1">
@@ -328,55 +388,160 @@ export default function SessionsPanel({
               </>
             ) : (
               <>
-                {/* Schedule Tab - Past Sessions */}
+                {/* Schedule Tab - Upcoming & Past Sessions */}
                 <div className="px-4 py-4">
-                  <div className="mb-3">
-                    <button className="w-full flex items-center justify-between py-2 px-3 rounded-lg transition-colors bg-purple-50 text-purple-700 font-medium text-sm">
-                      <span>Past</span>
+                  {/* Schedule Sub-tabs */}
+                  <div className="flex items-center gap-1 border-b border-gray-200 mb-4 -mx-4 px-4">
+                    <button
+                      onClick={() => setScheduleSubTab('upcoming')}
+                      className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 ${
+                        scheduleSubTab === 'upcoming'
+                          ? 'text-green-700 border-green-700'
+                          : 'text-gray-500 border-transparent hover:text-gray-700'
+                      }`}
+                    >
+                      Upcoming
+                      {upcomingAppointments.length > 0 && (
+                        <span className="ml-1.5 bg-green-100 text-green-700 text-xs rounded-full px-1.5 py-0.5">
+                          {upcomingAppointments.length}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setScheduleSubTab('past')}
+                      className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 ${
+                        scheduleSubTab === 'past'
+                          ? 'text-purple-700 border-purple-700'
+                          : 'text-gray-500 border-transparent hover:text-gray-700'
+                      }`}
+                    >
+                      Past
                     </button>
                   </div>
-                  
-                  {isLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="animate-spin text-gray-400" size={24} />
-                    </div>
-                  ) : error ? (
-                    <div className="text-center py-12 px-4 text-sm text-red-600">
-                      {error}
-                    </div>
-                  ) : sortedDates.length === 0 ? (
-                    <div className="text-center py-8 px-4">
-                      <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-                      <p className="text-gray-600 text-sm">No past sessions</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {sortedDates.map((dateKey) => {
-                        const dateSessions = groupedSessionsByDate[dateKey];
-                        return (
-                          <div key={dateKey} className="space-y-2">
-                            <div className="text-xs text-gray-600 font-medium">{dateKey}</div>
-                            <div className="space-y-1">
-                              {dateSessions.map((session) => (
-                                <button
-                                  key={session.id}
-                                  onClick={() => {
-                                    onSelectSession?.(session.id);
-                                    onClose();
-                                  }}
-                                  className={`block w-full text-left px-2 py-1 rounded hover:bg-gray-50 transition-colors ${
-                                    selectedSessionId === session.id ? 'bg-gray-50' : ''
-                                  }`}
-                                >
-                                  <div className="text-xs text-gray-700">{session.patientName}</div>
-                                  <div className="text-xs text-gray-500">{formatTime(session.createdAt)}</div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+
+                  {/* Upcoming Appointments */}
+                  {scheduleSubTab === 'upcoming' && (
+                    <>
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="animate-spin text-gray-400" size={24} />
+                        </div>
+                      ) : upcomingAppointments.length === 0 ? (
+                        <div className="text-center py-12 px-4">
+                          <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
+                          <p className="text-gray-600 text-sm">No upcoming appointments</p>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Pre-visit forms will appear here
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {upcomingAppointments.map((appointment) => (
+                            <button
+                              key={appointment.id}
+                              onClick={() => {
+                                onSelectAppointment?.(appointment.id);
+                                onClose();
+                              }}
+                              className={`w-full text-left border rounded-lg p-3 transition-colors ${
+                                selectedAppointmentId === appointment.id
+                                  ? 'border-green-500 bg-green-50'
+                                  : 'border-green-200 bg-green-50 hover:border-green-300 hover:bg-green-100'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="font-medium text-sm text-gray-900">
+                                  {appointment.personalInfo?.firstName}{' '}
+                                  {appointment.personalInfo?.lastName}
+                                </div>
+                                <span className="text-[10px] bg-green-200 text-green-700 px-1.5 py-0.5 rounded-full">
+                                  Pre-visit
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-600 mb-1">
+                                {appointment.medicalInfo?.reasonForVisit?.substring(0, 50)}
+                                {appointment.medicalInfo?.reasonForVisit?.length > 50 ? '...' : ''}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {appointment.submittedAt
+                                  ? new Date(appointment.submittedAt).toLocaleDateString()
+                                  : 'Recently'}
+                              </div>
+                              {appointment.personalInfo?.visitDateTime && (
+                                <div className="text-xs text-gray-600 font-medium mt-1">
+                                  Visit: {new Date(appointment.personalInfo.visitDateTime).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
+                                </div>
+                              )}
+                              {appointment.sessionCode && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Code: {appointment.sessionCode}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Past Sessions */}
+                  {scheduleSubTab === 'past' && (
+                    <>
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="animate-spin text-gray-400" size={24} />
+                        </div>
+                      ) : error ? (
+                        <div className="text-center py-12 px-4 text-sm text-red-600">
+                          {error}
+                        </div>
+                      ) : sortedDates.length === 0 ? (
+                        <div className="text-center py-8 px-4">
+                          <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
+                          <p className="text-gray-600 text-sm">No past sessions</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {sortedDates.map((dateKey) => {
+                            const dateSessions = groupedSessionsByDate[dateKey];
+                            return (
+                              <div key={dateKey} className="space-y-2">
+                                <div className="text-xs text-gray-600 font-medium">{dateKey}</div>
+                                <div className="space-y-1">
+                                  {dateSessions.map((session) => (
+                                    <button
+                                      key={session.id}
+                                      onClick={() => {
+                                        onSelectSession?.(session.id);
+                                        onClose();
+                                      }}
+                                      className={`block w-full text-left px-2 py-1 rounded hover:bg-gray-50 transition-colors ${
+                                        selectedSessionId === session.id ? 'bg-gray-50' : ''
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-700">{session.patientName}</span>
+                                        {preVisitStatuses[session.id] && (
+                                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-gray-500">{formatTime(session.createdAt)}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </>

@@ -31,15 +31,18 @@ import {
 } from 'lucide-react';
 import EmrSnapshotPanel from '@/components/EmrSnapshotPanel';
 import EmrSnapshotVisual from '@/components/EmrSnapshotVisual';
+import PreVisitSummary from '@/components/PreVisitSummary';
 import type { EmrSnapshotData } from '@/types/emr';
 import type { PrechartData } from '@/types/prechart';
 
 interface MainContentProps {
   selectedSessionId: string | null;
+  selectedAppointmentId?: string | null;
   onNoteContentChange?: (content: string | null) => void;
   onToggleTasksPanel?: () => void;
   isTasksPanelOpen?: boolean;
   onVoiceLogChange?: (voiceLog: { id: string; title: string; description: string; timestamp: string }[]) => void;
+  onAutomateAllTasksRequest?: () => void;
 }
 
 interface SessionDetailPayload {
@@ -171,12 +174,14 @@ Yours sincerely,
 
 (Never come up with your own patient details, medical history, symptoms, diagnosis, assessment, management plan or clinician information—use only what is explicitly provided in the transcript, contextual notes or clinical note. If information related to a placeholder has not been mentioned, omit that section or placeholder entirely. Do not insert generic statements, summaries, or assumptions in place of missing data. Maintain the letter’s structure and tone, ensuring the final document is clinically accurate.)`;
 
-export default function MainContent({ 
-  selectedSessionId, 
+export default function MainContent({
+  selectedSessionId,
+  selectedAppointmentId,
   onNoteContentChange,
   onToggleTasksPanel,
   isTasksPanelOpen,
   onVoiceLogChange,
+  onAutomateAllTasksRequest,
 }: MainContentProps) {
   const [sessionDetails, setSessionDetails] = useState<SessionDetailPayload | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
@@ -213,7 +218,17 @@ export default function MainContent({
 
   const noteContent =
     sessionDetails?.noteResult ?? 'No consult note is available yet.';
-  const patientNameForDisplay = sessionDetails?.patientName ?? 'No session selected';
+  const [appointmentData, setAppointmentData] = useState<any>(null);
+  const [editedPatientName, setEditedPatientName] = useState<string | null>(null);
+  const [isEditingPatientName, setIsEditingPatientName] = useState(false);
+  
+  const patientNameForDisplay = selectedAppointmentId 
+    ? `${appointmentData?.personalInfo?.firstName || ''} ${appointmentData?.personalInfo?.lastName || ''}`.trim() || 'Appointment selected'
+    : sessionDetails?.patientName ?? 'No session selected';
+  const effectivePatientName =
+    editedPatientName && editedPatientName.trim().length > 0
+      ? editedPatientName.trim()
+      : patientNameForDisplay;
   const normalizedNoteForEmr =
     noteContent === 'No consult note is available yet.' ? '' : noteContent;
   const patientNameForEmr =
@@ -250,6 +265,36 @@ export default function MainContent({
       setIsRefreshing(false);
     }
   }, [selectedSessionId]);
+
+  // Fetch appointment data when selected and switch to Context tab
+  useEffect(() => {
+    if (selectedAppointmentId) {
+      // Switch to Context tab to show pre-visit data
+      setActiveTab('context');
+      
+      const fetchAppointmentData = async () => {
+        try {
+          const response = await fetch(`/api/pre-visit/submit?sessionId=${selectedAppointmentId}`);
+          if (response.ok) {
+            const result = await response.json();
+            setAppointmentData(result.submission);
+          } else {
+            // Try fetching by appointment ID if sessionId doesn't work
+            const altResponse = await fetch(`/api/pre-visit/submit?appointmentId=${selectedAppointmentId}`);
+            if (altResponse.ok) {
+              const altResult = await altResponse.json();
+              setAppointmentData(altResult.submission);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch appointment data:', err);
+        }
+      };
+      fetchAppointmentData();
+    } else {
+      setAppointmentData(null);
+    }
+  }, [selectedAppointmentId]);
 
   const fetchEmrSnapshot = useCallback(async () => {
     setIsEmrLoading(true);
@@ -318,7 +363,7 @@ export default function MainContent({
         },
         body: JSON.stringify({
           sessionId: selectedSessionId,
-          patientName: patientNameForEmr || patientNameForDisplay,
+          patientName: patientNameForEmr || effectivePatientName,
         }),
       });
       const payload = (await response.json()) as { prechart?: PrechartData; error?: string };
@@ -334,7 +379,7 @@ export default function MainContent({
     } finally {
       setIsPrechartLoading(false);
     }
-  }, [patientNameForDisplay, patientNameForEmr, selectedSessionId]);
+  }, [effectivePatientName, patientNameForEmr, selectedSessionId]);
 
   const handleOpenEmrSnapshot = () => {
     setIsEmrPanelOpen(true);
@@ -556,7 +601,7 @@ export default function MainContent({
             : 'Specialist clinic';
         void generateReferral(
           inferredService,
-          patientNameForDisplay,
+          effectivePatientName,
           noteContent,
         );
         pushVoiceLog(
@@ -574,6 +619,22 @@ export default function MainContent({
         );
         return;
       }
+      if (
+        looseMatch(lc, [
+          'automate tasks',
+          'automate all tasks',
+          'complete all tasks',
+          'run all tasks',
+          'do all tasks',
+        ])
+      ) {
+        onAutomateAllTasksRequest?.();
+        pushVoiceLog(
+          'Tasks automation simulated',
+          'Simulated automation for all extracted tasks in the Tasks panel.',
+        );
+        return;
+      }
       if (looseMatch(lc, ['select template', 'auto template', 'choose template'])) {
         const suggested =
           looseMatch(lc + ' ' + noteContent.toLowerCase(), ['abdominal'])
@@ -586,9 +647,9 @@ export default function MainContent({
         return;
       }
 
-      setVoiceError('Voice command not recognized. Try: "pre chart", "fetch EMR", or "start referral".');
+      setVoiceError('Voice command not recognized. Try: "pre chart", "fetch EMR", "start referral", or "automate tasks".');
     },
-    [fetchEmrSnapshot, fetchPrechart, noteContent, patientNameForDisplay, prechart?.reasonForVisit, generateReferral],
+    [fetchEmrSnapshot, fetchPrechart, noteContent, effectivePatientName, prechart?.reasonForVisit, generateReferral, onAutomateAllTasksRequest],
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -785,6 +846,14 @@ export default function MainContent({
                   <li>• &quot;Choose template&quot;</li>
                 </ul>
               </div>
+              <div>
+                <p className="font-semibold text-gray-700 mb-1">Tasks automation</p>
+                <ul className="space-y-0.5 text-gray-600">
+                  <li>• &quot;Automate tasks&quot;</li>
+                  <li>• &quot;Automate all tasks&quot;</li>
+                  <li>• &quot;Complete all tasks&quot;</li>
+                </ul>
+              </div>
             </div>
             <p className="text-[10px] text-gray-500 mt-3 pt-3 border-t border-gray-200">
               Tip: Commands are flexible - you can use variations like &quot;Generate Referral&quot;, &quot;Send Referral&quot;, or &quot;Create Referral&quot; - they all work the same way.
@@ -866,20 +935,51 @@ export default function MainContent({
         {/* Session Details */}
         <div className="px-6 py-3 border-t border-gray-200">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-900">
-                  {patientNameForDisplay}
-                </span>
-                <button className="text-gray-400 hover:text-gray-600">
-                  <Pencil size={14} />
-                </button>
-                <button className="text-gray-400 hover:text-gray-600">
-                  <RefreshCw size={14} />
-                </button>
-                <button className="text-gray-400 hover:text-gray-600">
-                  <Trash2 size={14} />
-                </button>
+                {isEditingPatientName ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editedPatientName ?? patientNameForDisplay}
+                      onChange={(e) => setEditedPatientName(e.target.value)}
+                      className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <button
+                      className="text-xs text-purple-700 hover:text-purple-900"
+                      onClick={() => setIsEditingPatientName(false)}
+                    >
+                      Save
+                    </button>
+                    <button
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                      onClick={() => {
+                        setEditedPatientName(null);
+                        setIsEditingPatientName(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-gray-900">
+                      {effectivePatientName}
+                    </span>
+                    <button
+                      className="text-gray-400 hover:text-gray-600"
+                      onClick={() => setIsEditingPatientName(true)}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <RefreshCw size={14} />
+                    </button>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
              <button
@@ -948,11 +1048,11 @@ export default function MainContent({
           </div>
           <button
             onClick={() => {
-              if (noteContent !== 'No consult note is available yet.' && patientNameForDisplay !== 'No session selected') {
-                void generateReferral('Specialist clinic', patientNameForDisplay, noteContent);
+              if (noteContent !== 'No consult note is available yet.' && effectivePatientName !== 'No session selected') {
+                void generateReferral('Specialist clinic', effectivePatientName, noteContent);
               }
             }}
-            disabled={isGeneratingReferral || noteContent === 'No consult note is available yet.' || patientNameForDisplay === 'No session selected'}
+            disabled={isGeneratingReferral || noteContent === 'No consult note is available yet.' || effectivePatientName === 'No session selected'}
             className="inline-flex items-center gap-2 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium py-1.5 px-3 rounded-lg transition-colors text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed"
           >
             <Loader2
@@ -1407,7 +1507,13 @@ export default function MainContent({
                     No EMR snapshot loaded yet. Click &quot;View EMR Snapshot&quot; to fetch current patient data from OpenEMR.
                   </p>
                 )}
-        </div>
+              </div>
+
+              {/* Pre-Visit Form Summary */}
+              <PreVisitSummary 
+                sessionId={selectedSessionId} 
+                appointmentId={selectedAppointmentId || undefined}
+              />
             </>
           )}
 
