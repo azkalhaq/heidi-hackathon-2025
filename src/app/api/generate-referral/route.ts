@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { noteContent, patientName, service, prechart } = body;
+    const { noteContent, patientName, service, prechart, emrSnapshot } = body;
 
     if (!noteContent || typeof noteContent !== 'string') {
       return NextResponse.json(
@@ -74,7 +74,9 @@ Return the completed referral letter with all available information filled in, a
 CONSULT NOTE:
 ${noteContent}
 
-${prechart ? `\nADDITIONAL CONTEXT FROM EMR:\n${JSON.stringify(prechart, null, 2)}\n` : ''}
+${prechart ? `\nADDITIONAL CONTEXT FROM EMR (Pre-chart):\n${JSON.stringify(prechart, null, 2)}\n` : ''}
+
+${emrSnapshot ? `\nCURRENT EMR SNAPSHOT DATA:\n${JSON.stringify(emrSnapshot, null, 2)}\n` : ''}
 
 ${patientName ? `\nPatient name (for reference): ${patientName}\n` : ''}
 ${service ? `\nReferral service: ${service}\n` : ''}
@@ -116,7 +118,10 @@ Please fill in the template with information from the consult note. Omit any sec
     const generatedText =
       openaiData.choices?.[0]?.message?.content?.trim() || template;
 
-    return NextResponse.json({ referralLetter: generatedText });
+    return NextResponse.json({ 
+      referralLetter: generatedText,
+      emrSnapshot: emrSnapshot || null,
+    });
   } catch (error) {
     console.error('[GENERATE REFERRAL API]', error);
     return NextResponse.json(
