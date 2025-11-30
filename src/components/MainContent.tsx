@@ -94,6 +94,228 @@ function looseMatch(text: string, patterns: string[]): boolean {
   });
 }
 
+/**
+ * Extracts timeline events from transcription text by parsing dates and associated medical events
+ */
+function extractTimelineFromTranscript(transcript: string | null): Array<{
+  date: string;
+  label: string;
+  source: 'transcript';
+}> {
+  if (!transcript || transcript.trim().length === 0) {
+    return [];
+  }
+
+  const events: Array<{ date: string; label: string; source: 'transcript' }> = [];
+  const text = transcript;
+
+  // Helper to normalize dates to ISO format (YYYY-MM-DD)
+  const normalizeDate = (dateStr: string, contextDate?: Date): string | null => {
+    const today = contextDate || new Date();
+    
+    // ISO date format (YYYY-MM-DD)
+    const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      return dateStr.substring(0, 10);
+    }
+
+    // Relative dates
+    const lower = dateStr.toLowerCase();
+    if (lower.includes('today') || lower.includes('this visit')) {
+      return today.toISOString().substring(0, 10);
+    }
+    if (lower.includes('yesterday')) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().substring(0, 10);
+    }
+    if (lower.includes('last week')) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 7);
+      return d.toISOString().substring(0, 10);
+    }
+    if (lower.includes('last month')) {
+      const d = new Date(today);
+      d.setMonth(d.getMonth() - 1);
+      return d.toISOString().substring(0, 10);
+    }
+    if (lower.match(/(\d+)\s*(week|day|month|year)s?\s*ago/)) {
+      const match = lower.match(/(\d+)\s*(week|day|month|year)s?\s*ago/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        const unit = match[2];
+        const d = new Date(today);
+        if (unit === 'day') d.setDate(d.getDate() - num);
+        else if (unit === 'week') d.setDate(d.getDate() - num * 7);
+        else if (unit === 'month') d.setMonth(d.getMonth() - num);
+        else if (unit === 'year') d.setFullYear(d.getFullYear() - num);
+        return d.toISOString().substring(0, 10);
+      }
+    }
+
+    // Month/Day/Year or Month Day, Year formats
+    const monthDayMatch = dateStr.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i);
+    if (monthDayMatch) {
+      const months: Record<string, number> = {
+        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+      };
+      const month = months[monthDayMatch[1].toLowerCase()];
+      const day = parseInt(monthDayMatch[2], 10);
+      const year = monthDayMatch[3] ? parseInt(monthDayMatch[3], 10) : today.getFullYear();
+      if (month !== undefined && day && year) {
+        const d = new Date(year, month, day);
+        return d.toISOString().substring(0, 10);
+      }
+    }
+
+    // MM/DD/YYYY or DD/MM/YYYY
+    const slashMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slashMatch) {
+      const m = parseInt(slashMatch[1], 10);
+      const d = parseInt(slashMatch[2], 10);
+      const y = parseInt(slashMatch[3], 10);
+      // Assume MM/DD/YYYY format
+      if (m <= 12 && d <= 31) {
+        const date = new Date(y, m - 1, d);
+        return date.toISOString().substring(0, 10);
+      }
+    }
+
+    return null;
+  };
+
+  // Extract context around a date (up to 200 characters before and after)
+  const getContextAroundDate = (text: string, dateIndex: number, dateLength: number): string => {
+    const start = Math.max(0, dateIndex - 200);
+    const end = Math.min(text.length, dateIndex + dateLength + 200);
+    return text.substring(start, end).trim();
+  };
+
+  // Patterns to find dates in text
+  const datePatterns = [
+    // ISO dates
+    /\b(\d{4}-\d{2}-\d{2})\b/g,
+    // Relative dates
+    /\b(today|yesterday|last\s+week|last\s+month|(\d+)\s*(week|day|month|year)s?\s*ago)\b/gi,
+    // Month Day, Year
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b/gi,
+    // MM/DD/YYYY
+    /\b(\d{1,2}\/\d{1,2}\/\d{4})\b/g,
+  ];
+
+  const foundDates = new Set<string>();
+
+  datePatterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const dateStr = match[0];
+      const normalizedDate = normalizeDate(dateStr);
+      
+      if (normalizedDate && !foundDates.has(normalizedDate)) {
+        foundDates.add(normalizedDate);
+        
+        // Get context around this date
+        const context = getContextAroundDate(text, match.index, match[0].length);
+        
+        // Extract meaningful medical events from context
+        const medicalKeywords = [
+          'surgery', 'surgical', 'procedure', 'operation', 'diagnosed', 'diagnosis',
+          'treatment', 'medication', 'prescribed', 'started', 'stopped', 'changed',
+          'lab', 'test', 'result', 'scan', 'x-ray', 'mri', 'ct', 'ultrasound',
+          'hospital', 'admitted', 'discharged', 'emergency', 'er', 'visit',
+          'appointment', 'consultation', 'follow-up', 'followup',
+          'symptom', 'pain', 'fever', 'infection', 'fracture', 'injury',
+          'therapy', 'physical therapy', 'pt', 'rehabilitation',
+        ];
+
+        // Check if context contains medical keywords
+        const lowerContext = context.toLowerCase();
+        const hasMedicalContext = medicalKeywords.some((keyword) =>
+          lowerContext.includes(keyword),
+        );
+
+        if (hasMedicalContext) {
+          // Extract a meaningful label from context
+          // Try to find a sentence or phrase that describes the event
+          const sentences = context.split(/[.!?]\s+/);
+          let eventLabel = 'Medical event mentioned in transcript';
+          
+          // Find the sentence containing the date
+          for (const sentence of sentences) {
+            if (sentence.toLowerCase().includes(dateStr.toLowerCase())) {
+              // Clean up the sentence
+              let cleaned = sentence
+                .replace(/^\s*[,\-–—]\s*/, '')
+                .trim()
+                .substring(0, 150);
+              
+              // Remove the date from the label if it's at the start
+              cleaned = cleaned.replace(new RegExp(`^${dateStr}\\s*[,\\-–—]?\\s*`, 'i'), '');
+              
+              if (cleaned.length > 10) {
+                eventLabel = cleaned;
+                break;
+              }
+            }
+          }
+
+          // If no good sentence found, try to extract key phrases
+          if (eventLabel === 'Medical event mentioned in transcript') {
+            const phrases = context.match(/\b(?:had|underwent|received|started|stopped|diagnosed with|treated for|surgery for|procedure for|test for)\s+([^.!?]{10,80})/i);
+            if (phrases && phrases[1]) {
+              eventLabel = phrases[1].trim();
+            }
+          }
+
+          events.push({
+            date: normalizedDate,
+            label: eventLabel.length > 100 ? eventLabel.substring(0, 100) + '...' : eventLabel,
+            source: 'transcript',
+          });
+        }
+      }
+    }
+  });
+
+  // Also look for medical events without explicit dates but with relative time references
+  const relativeEventPatterns = [
+    /(?:had|underwent|received|started|stopped|diagnosed with|treated for)\s+([^.!?]{10,80}?)\s+(?:last\s+)?(week|month|year|day)s?\s+ago/gi,
+    /(?:last\s+)?(week|month|year|day)s?\s+ago[^.!?]{0,100}?(?:had|underwent|received|started|stopped|diagnosed|treated|surgery|procedure)/gi,
+  ];
+
+  relativeEventPatterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const context = getContextAroundDate(text, match.index, match[0].length);
+      const timeMatch = context.match(/(\d+)\s*(week|day|month|year)s?\s*ago/i);
+      if (timeMatch) {
+        const num = parseInt(timeMatch[1], 10);
+        const unit = timeMatch[2].toLowerCase();
+        const today = new Date();
+        const eventDate = new Date(today);
+        if (unit === 'day') eventDate.setDate(eventDate.getDate() - num);
+        else if (unit === 'week') eventDate.setDate(eventDate.getDate() - num * 7);
+        else if (unit === 'month') eventDate.setMonth(eventDate.getMonth() - num);
+        else if (unit === 'year') eventDate.setFullYear(eventDate.getFullYear() - num);
+        
+        const normalizedDate = eventDate.toISOString().substring(0, 10);
+        if (!foundDates.has(normalizedDate)) {
+          foundDates.add(normalizedDate);
+          const eventText = match[0].substring(0, 100);
+          events.push({
+            date: normalizedDate,
+            label: eventText,
+            source: 'transcript',
+          });
+        }
+      }
+    }
+  });
+
+  return events;
+}
+
 // Mock data for demo purposes
 const getMockPrechartData = (patientName: string): PrechartData => ({
   demographics: {
@@ -223,7 +445,7 @@ export default function MainContent({
     const events: {
       date: string;
       label: string;
-      source: 'prechart' | 'emr' | 'session';
+      source: 'prechart' | 'emr' | 'session' | 'transcript';
     }[] = [];
 
     if (prechart?.pastEncounters) {
@@ -252,6 +474,12 @@ export default function MainContent({
       }
     }
 
+    // Extract timeline events from transcription
+    if (transcription) {
+      const transcriptEvents = extractTimelineFromTranscript(transcription);
+      events.push(...transcriptEvents);
+    }
+
     if (sessionDetails?.createdAt) {
       events.push({
         date: sessionDetails.createdAt,
@@ -264,10 +492,10 @@ export default function MainContent({
     events.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
     const lines = events
-      .slice(0, 8)
+      .slice(0, 12)
       .map((e) => `- ${e.date} | ${e.source} | ${e.label}`);
     return lines.length ? lines.join('\n') : null;
-  }, [prechart, emrSnapshot, sessionDetails]);
+  }, [prechart, emrSnapshot, sessionDetails, transcription]);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isPrescriptionAcknowledged, setIsPrescriptionAcknowledged] = useState(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
@@ -2194,6 +2422,10 @@ export default function MainContent({
                         sourceLabel = 'Heidi Session';
                         sourceUrl = null;
                         sourceColor = 'bg-purple-50 text-purple-700';
+                      } else if (sourcePart === 'transcript') {
+                        sourceLabel = 'From Transcript';
+                        sourceUrl = null;
+                        sourceColor = 'bg-orange-50 text-orange-700';
                       }
                       return (
                         <li key={line} className="flex items-start gap-2 text-[11px] text-gray-700">

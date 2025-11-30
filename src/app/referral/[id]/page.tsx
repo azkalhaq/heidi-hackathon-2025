@@ -254,6 +254,10 @@ export default function ReferralPage() {
                       sourceLabel = 'Heidi Session';
                       sourceUrl = null;
                       sourceColor = 'bg-purple-50 text-purple-700';
+                    } else if (sourcePart === 'transcript') {
+                      sourceLabel = 'From Transcript';
+                      sourceUrl = null;
+                      sourceColor = 'bg-orange-50 text-orange-700';
                     }
 
                     return (
