@@ -225,10 +225,70 @@ export default function ReferralPage() {
           {referralData.timelineSummary && (
             <div className="mt-8 pt-8 border-t border-gray-200">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Patient Timeline</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Chronological view of EMR events and labs leading up to this consultation.
+              </p>
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <pre className="whitespace-pre-wrap text-xs text-gray-700">
-                  {referralData.timelineSummary}
-                </pre>
+                <ol className="space-y-3">
+                  {referralData.timelineSummary.split('\n').map((line, index) => {
+                    const trimmed = line.replace(/^-\s*/, '').trim();
+                    if (!trimmed) return null;
+                    const parts = trimmed.split('|').map((p) => p.trim());
+                    const datePart = parts[0] ?? '';
+                    const sourcePart = (parts[1] ?? '').toLowerCase();
+                    const label = parts.slice(2).join(' | ').replace(/^:+/, '').trim();
+
+                    let sourceLabel = 'EMR';
+                    let sourceUrl: string | null = null;
+                    let sourceColor = 'bg-gray-100 text-gray-700';
+
+                    if (sourcePart === 'prechart') {
+                      sourceLabel = 'Pre-chart EMR';
+                      sourceUrl = 'https://www.open-emr.org/';
+                      sourceColor = 'bg-blue-50 text-blue-700';
+                    } else if (sourcePart === 'emr') {
+                      sourceLabel = 'EMR Snapshot';
+                      sourceUrl = 'https://www.open-emr.org/';
+                      sourceColor = 'bg-green-50 text-green-700';
+                    } else if (sourcePart === 'session') {
+                      sourceLabel = 'Heidi Session';
+                      sourceUrl = null;
+                      sourceColor = 'bg-purple-50 text-purple-700';
+                    }
+
+                    return (
+                      <li key={index} className="flex items-start gap-3 text-sm text-gray-700">
+                        <div className="mt-1 h-2 w-2 rounded-full bg-indigo-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 text-sm">
+                            {datePart}
+                          </p>
+                          {label && (
+                            <p className="text-sm text-gray-600 mt-0.5">
+                              {label}
+                            </p>
+                          )}
+                          <div className="mt-1.5">
+                            {sourceUrl ? (
+                              <a
+                                href={sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`inline-block text-[10px] ${sourceColor} px-2 py-0.5 rounded-full font-medium hover:opacity-80 transition-opacity`}
+                              >
+                                {sourceLabel}
+                              </a>
+                            ) : (
+                              <span className={`inline-block text-[10px] ${sourceColor} px-2 py-0.5 rounded-full font-medium`}>
+                                {sourceLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               </div>
             </div>
           )}

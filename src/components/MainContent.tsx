@@ -587,6 +587,7 @@ export default function MainContent({
           patientName: referralDraft.patientName,
           service: referralDraft.service,
           notePreview: referralDraft.notePreview,
+          timelineSummary: referralDraft.timelineSummary || null,
           password: sharePassword || undefined,
         }),
       });
@@ -1268,7 +1269,7 @@ export default function MainContent({
             >
             <Pencil size={14} />
             <span>Note</span>
-            </button>
+          </button>
             {isPrescriptionAcknowledged && (
               <button
                 onClick={() => setActiveTab('prescription')}
@@ -1632,7 +1633,7 @@ export default function MainContent({
                     {/* Quick links to external EMR portals (open in new tab) */}
                     <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
                       <span className="mr-1">Open EMR:</span>
-                      <button
+              <button
                         type="button"
                         onClick={() => window.open('https://www.open-emr.org/', '_blank')}
                         className="px-2 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
@@ -1980,14 +1981,14 @@ export default function MainContent({
             <div className="flex-shrink-0 px-8 pt-8 pb-4 border-b border-gray-200">
               <button
                 type="button"
-                onClick={() => {
+                    onClick={() => {
                   setPrescriptionDraft(null);
                   setPrescriptionGenerationError(null);
-                }}
+                    }}
                 className="absolute right-4 top-4 text-gray-400 hover:text-gray-700 text-sm z-10"
-              >
+                  >
                 Close
-              </button>
+                  </button>
               <div>
                 <p className="text-xs font-semibold uppercase text-emerald-600 tracking-wide">
                   Review prescription
@@ -2047,9 +2048,9 @@ export default function MainContent({
             </div>
 
             <div className="flex-shrink-0 px-8 py-3 border-top border-gray-200 bg-white flex items-center justify-end">
-              <button
+                  <button
                 type="button"
-                onClick={() => {
+                    onClick={() => {
                   setPrescriptionDraft(null);
                   setPrescriptionGenerationError(null);
                 }}
@@ -2243,12 +2244,12 @@ export default function MainContent({
                   </label>
                   <div className="px-3 py-2 rounded-md border border-gray-200 bg-gray-50 text-gray-800 text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
                     {referralDraft.notePreview}
-                  </div>
-                </div>
+            </div>
+          </div>
               )}
 
-              </div>
-            </div>
+        </div>
+      </div>
             {/* Footer with Close + Sharing controls */}
             <div className="flex-shrink-0 px-8 py-3 border-t border-gray-200 bg-white flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <button
@@ -2291,7 +2292,7 @@ export default function MainContent({
                     <Copy size={12} />
                     <span>{copiedPassword ? 'Copied' : 'Copy'}</span>
                   </button>
-                </div>
+    </div>
                 {/* Link controls */}
                 <div className="flex items-center gap-2">
                   {shareUrl && (
